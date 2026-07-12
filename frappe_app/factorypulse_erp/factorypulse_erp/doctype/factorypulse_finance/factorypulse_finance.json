@@ -1,0 +1,87 @@
+{
+  "autoname": "format:FP-.#####",
+  "custom": 0,
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "fields": [
+    {
+      "fieldname": "tenant_id",
+      "fieldtype": "Data",
+      "hidden": 1,
+      "label": "Tenant ID",
+      "read_only": 1
+    },
+    {
+      "fieldname": "invoice_no",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "in_standard_filter": 0,
+      "label": "Invoice No"
+    },
+    {
+      "fieldname": "party",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "in_standard_filter": 0,
+      "label": "Party"
+    },
+    {
+      "fieldname": "invoice_type",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "in_standard_filter": 0,
+      "label": "Invoice Type"
+    },
+    {
+      "fieldname": "amount",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "in_standard_filter": 0,
+      "label": "Amount"
+    },
+    {
+      "fieldname": "due_date",
+      "fieldtype": "Date",
+      "in_list_view": 0,
+      "in_standard_filter": 0,
+      "label": "Due Date"
+    },
+    {
+      "fieldname": "payment_status",
+      "fieldtype": "Data",
+      "in_list_view": 0,
+      "in_standard_filter": 0,
+      "label": "Payment Status"
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "in_list_view": 0,
+      "in_standard_filter": 1,
+      "label": "Status",
+      "options": "Draft\nOpen\nActive\nPending\nApproved\nRejected\nComplete\nClosed"
+    }
+  ],
+  "is_submittable": 0,
+  "module": "FactoryPulse ERP",
+  "name": "FactoryPulse Finance",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "read": 1,
+      "role": "FactoryPulse Admin",
+      "write": 1
+    },
+    {
+      "create": 1,
+      "delete": 1,
+      "read": 1,
+      "role": "System Manager",
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "track_changes": 1
+}

@@ -1,0 +1,12 @@
+services:
+  factorypulse:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    volumes:
+      - factorypulse-data:/app/data
+    restart: unless-stopped
+volumes:
+  factorypulse-data:

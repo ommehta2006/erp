@@ -1,0 +1,47 @@
+{
+  "autoname": "hash",
+  "custom": 0,
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "fields": [
+    {
+      "fieldname": "key",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Key"
+    },
+    {
+      "fieldname": "owner_user",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Owner User"
+    },
+    {
+      "fieldname": "response_json",
+      "fieldtype": "Code",
+      "in_list_view": 1,
+      "label": "Response JSON"
+    }
+  ],
+  "module": "FactoryPulse ERP",
+  "name": "FactoryPulse Idempotency Key",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "read": 1,
+      "role": "FactoryPulse Admin",
+      "write": 1
+    },
+    {
+      "create": 1,
+      "delete": 1,
+      "read": 1,
+      "role": "System Manager",
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "track_changes": 1
+}

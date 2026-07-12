@@ -1,0 +1,94 @@
+{
+  "autoname": "format:FP-.#####",
+  "custom": 0,
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "fields": [
+    {
+      "fieldname": "tenant_id",
+      "fieldtype": "Data",
+      "hidden": 1,
+      "label": "Tenant ID",
+      "read_only": 1
+    },
+    {
+      "fieldname": "ticket_no",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "in_standard_filter": 0,
+      "label": "Ticket No"
+    },
+    {
+      "fieldname": "vehicle_no",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "in_standard_filter": 0,
+      "label": "Vehicle No"
+    },
+    {
+      "fieldname": "farmer_code",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "in_standard_filter": 0,
+      "label": "Farmer Code"
+    },
+    {
+      "fieldname": "gross_weight",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "in_standard_filter": 0,
+      "label": "Gross Weight"
+    },
+    {
+      "fieldname": "tare_weight",
+      "fieldtype": "Data",
+      "in_list_view": 0,
+      "in_standard_filter": 0,
+      "label": "Tare Weight"
+    },
+    {
+      "fieldname": "net_weight",
+      "fieldtype": "Data",
+      "in_list_view": 0,
+      "in_standard_filter": 0,
+      "label": "Net Weight"
+    },
+    {
+      "fieldname": "quality_status",
+      "fieldtype": "Data",
+      "in_list_view": 0,
+      "in_standard_filter": 0,
+      "label": "Quality Status"
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "in_list_view": 0,
+      "in_standard_filter": 1,
+      "label": "Status",
+      "options": "Draft\nOpen\nActive\nPending\nApproved\nRejected\nComplete\nClosed"
+    }
+  ],
+  "is_submittable": 0,
+  "module": "FactoryPulse ERP",
+  "name": "FactoryPulse Weighbridge",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "read": 1,
+      "role": "FactoryPulse Admin",
+      "write": 1
+    },
+    {
+      "create": 1,
+      "delete": 1,
+      "read": 1,
+      "role": "System Manager",
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "track_changes": 1
+}

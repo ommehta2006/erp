@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "factorypulse-erp"
+version = "0.3.0"
+description = "FactoryPulse ERP custom Frappe app for sugar factory operations"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name = "FactoryPulse Delivery Team"}]
+license = {text = "Proprietary"}
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["factorypulse_erp*"]
+
+[tool.setuptools.package-data]
+factorypulse_erp = ["**/*.json", "**/*.txt", "**/*.html", "**/*.js", "**/*.css"]

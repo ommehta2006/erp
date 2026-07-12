@@ -1,0 +1,819 @@
+{
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "FactoryPulse ERP API",
+    "version": "0.4.0-reference"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/admin/settings": {
+      "get": {
+        "summary": "Tenant/runtime settings summary"
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "summary": "List tenant users"
+      },
+      "post": {
+        "summary": "Create tenant user"
+      }
+    },
+    "/api/approvals": {
+      "get": {
+        "summary": "List approvals"
+      },
+      "post": {
+        "summary": "Create approvals"
+      }
+    },
+    "/api/approvals/{id}": {
+      "get": {
+        "summary": "Read approvals"
+      },
+      "patch": {
+        "summary": "Update approvals"
+      }
+    },
+    "/api/assets": {
+      "get": {
+        "summary": "List assets"
+      },
+      "post": {
+        "summary": "Create assets"
+      }
+    },
+    "/api/assets/{id}": {
+      "get": {
+        "summary": "Read assets"
+      },
+      "patch": {
+        "summary": "Update assets"
+      }
+    },
+    "/api/attendance": {
+      "get": {
+        "summary": "List attendance"
+      },
+      "post": {
+        "summary": "Create attendance"
+      }
+    },
+    "/api/attendance/{id}": {
+      "get": {
+        "summary": "Read attendance"
+      },
+      "patch": {
+        "summary": "Update attendance"
+      }
+    },
+    "/api/audit-events": {
+      "get": {
+        "summary": "Tenant audit events"
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "summary": "Password login"
+      }
+    },
+    "/api/boiler_logs": {
+      "get": {
+        "summary": "List boiler_logs"
+      },
+      "post": {
+        "summary": "Create boiler_logs"
+      }
+    },
+    "/api/boiler_logs/{id}": {
+      "get": {
+        "summary": "Read boiler_logs"
+      },
+      "patch": {
+        "summary": "Update boiler_logs"
+      }
+    },
+    "/api/byproducts": {
+      "get": {
+        "summary": "List byproducts"
+      },
+      "post": {
+        "summary": "Create byproducts"
+      }
+    },
+    "/api/byproducts/{id}": {
+      "get": {
+        "summary": "Read byproducts"
+      },
+      "patch": {
+        "summary": "Update byproducts"
+      }
+    },
+    "/api/cane_registrations": {
+      "get": {
+        "summary": "List cane_registrations"
+      },
+      "post": {
+        "summary": "Create cane_registrations"
+      }
+    },
+    "/api/cane_registrations/{id}": {
+      "get": {
+        "summary": "Read cane_registrations"
+      },
+      "patch": {
+        "summary": "Update cane_registrations"
+      }
+    },
+    "/api/catalog": {
+      "get": {
+        "summary": "Visible module catalog"
+      }
+    },
+    "/api/dashboard": {
+      "get": {
+        "summary": "Role-filtered executive dashboard"
+      }
+    },
+    "/api/departments": {
+      "get": {
+        "summary": "List departments"
+      },
+      "post": {
+        "summary": "Create departments"
+      }
+    },
+    "/api/departments/{id}": {
+      "get": {
+        "summary": "Read departments"
+      },
+      "patch": {
+        "summary": "Update departments"
+      }
+    },
+    "/api/dispatches": {
+      "get": {
+        "summary": "List dispatches"
+      },
+      "post": {
+        "summary": "Create dispatches"
+      }
+    },
+    "/api/dispatches/{id}": {
+      "get": {
+        "summary": "Read dispatches"
+      },
+      "patch": {
+        "summary": "Update dispatches"
+      }
+    },
+    "/api/distillery_batches": {
+      "get": {
+        "summary": "List distillery_batches"
+      },
+      "post": {
+        "summary": "Create distillery_batches"
+      }
+    },
+    "/api/distillery_batches/{id}": {
+      "get": {
+        "summary": "Read distillery_batches"
+      },
+      "patch": {
+        "summary": "Update distillery_batches"
+      }
+    },
+    "/api/documents": {
+      "get": {
+        "summary": "List documents"
+      },
+      "post": {
+        "summary": "Create documents"
+      }
+    },
+    "/api/documents/{id}": {
+      "get": {
+        "summary": "Read documents"
+      },
+      "patch": {
+        "summary": "Update documents"
+      }
+    },
+    "/api/employees": {
+      "get": {
+        "summary": "List employees"
+      },
+      "post": {
+        "summary": "Create employees"
+      }
+    },
+    "/api/employees/{id}": {
+      "get": {
+        "summary": "Read employees"
+      },
+      "patch": {
+        "summary": "Update employees"
+      }
+    },
+    "/api/ethanol_dispatches": {
+      "get": {
+        "summary": "List ethanol_dispatches"
+      },
+      "post": {
+        "summary": "Create ethanol_dispatches"
+      }
+    },
+    "/api/ethanol_dispatches/{id}": {
+      "get": {
+        "summary": "Read ethanol_dispatches"
+      },
+      "patch": {
+        "summary": "Update ethanol_dispatches"
+      }
+    },
+    "/api/export/approvals.csv": {
+      "get": {
+        "summary": "Export approvals as CSV"
+      }
+    },
+    "/api/export/assets.csv": {
+      "get": {
+        "summary": "Export assets as CSV"
+      }
+    },
+    "/api/export/attendance.csv": {
+      "get": {
+        "summary": "Export attendance as CSV"
+      }
+    },
+    "/api/export/boiler_logs.csv": {
+      "get": {
+        "summary": "Export boiler_logs as CSV"
+      }
+    },
+    "/api/export/byproducts.csv": {
+      "get": {
+        "summary": "Export byproducts as CSV"
+      }
+    },
+    "/api/export/cane_registrations.csv": {
+      "get": {
+        "summary": "Export cane_registrations as CSV"
+      }
+    },
+    "/api/export/departments.csv": {
+      "get": {
+        "summary": "Export departments as CSV"
+      }
+    },
+    "/api/export/dispatches.csv": {
+      "get": {
+        "summary": "Export dispatches as CSV"
+      }
+    },
+    "/api/export/distillery_batches.csv": {
+      "get": {
+        "summary": "Export distillery_batches as CSV"
+      }
+    },
+    "/api/export/documents.csv": {
+      "get": {
+        "summary": "Export documents as CSV"
+      }
+    },
+    "/api/export/employees.csv": {
+      "get": {
+        "summary": "Export employees as CSV"
+      }
+    },
+    "/api/export/ethanol_dispatches.csv": {
+      "get": {
+        "summary": "Export ethanol_dispatches as CSV"
+      }
+    },
+    "/api/export/farmers.csv": {
+      "get": {
+        "summary": "Export farmers as CSV"
+      }
+    },
+    "/api/export/harvest_plans.csv": {
+      "get": {
+        "summary": "Export harvest_plans as CSV"
+      }
+    },
+    "/api/export/incidents.csv": {
+      "get": {
+        "summary": "Export incidents as CSV"
+      }
+    },
+    "/api/export/inventory_items.csv": {
+      "get": {
+        "summary": "Export inventory_items as CSV"
+      }
+    },
+    "/api/export/invoices.csv": {
+      "get": {
+        "summary": "Export invoices as CSV"
+      }
+    },
+    "/api/export/leave_requests.csv": {
+      "get": {
+        "summary": "Export leave_requests as CSV"
+      }
+    },
+    "/api/export/maintenance_work_orders.csv": {
+      "get": {
+        "summary": "Export maintenance_work_orders as CSV"
+      }
+    },
+    "/api/export/packaging_runs.csv": {
+      "get": {
+        "summary": "Export packaging_runs as CSV"
+      }
+    },
+    "/api/export/payroll_runs.csv": {
+      "get": {
+        "summary": "Export payroll_runs as CSV"
+      }
+    },
+    "/api/export/power_generation.csv": {
+      "get": {
+        "summary": "Export power_generation as CSV"
+      }
+    },
+    "/api/export/production_batches.csv": {
+      "get": {
+        "summary": "Export production_batches as CSV"
+      }
+    },
+    "/api/export/purchase_orders.csv": {
+      "get": {
+        "summary": "Export purchase_orders as CSV"
+      }
+    },
+    "/api/export/quality_tests.csv": {
+      "get": {
+        "summary": "Export quality_tests as CSV"
+      }
+    },
+    "/api/export/sales_orders.csv": {
+      "get": {
+        "summary": "Export sales_orders as CSV"
+      }
+    },
+    "/api/export/shifts.csv": {
+      "get": {
+        "summary": "Export shifts as CSV"
+      }
+    },
+    "/api/export/support_tickets.csv": {
+      "get": {
+        "summary": "Export support_tickets as CSV"
+      }
+    },
+    "/api/export/tasks.csv": {
+      "get": {
+        "summary": "Export tasks as CSV"
+      }
+    },
+    "/api/export/training_records.csv": {
+      "get": {
+        "summary": "Export training_records as CSV"
+      }
+    },
+    "/api/export/vehicles.csv": {
+      "get": {
+        "summary": "Export vehicles as CSV"
+      }
+    },
+    "/api/export/visitor_passes.csv": {
+      "get": {
+        "summary": "Export visitor_passes as CSV"
+      }
+    },
+    "/api/export/warehouses.csv": {
+      "get": {
+        "summary": "Export warehouses as CSV"
+      }
+    },
+    "/api/export/weighbridge_tickets.csv": {
+      "get": {
+        "summary": "Export weighbridge_tickets as CSV"
+      }
+    },
+    "/api/farmers": {
+      "get": {
+        "summary": "List farmers"
+      },
+      "post": {
+        "summary": "Create farmers"
+      }
+    },
+    "/api/farmers/{id}": {
+      "get": {
+        "summary": "Read farmers"
+      },
+      "patch": {
+        "summary": "Update farmers"
+      }
+    },
+    "/api/harvest_plans": {
+      "get": {
+        "summary": "List harvest_plans"
+      },
+      "post": {
+        "summary": "Create harvest_plans"
+      }
+    },
+    "/api/harvest_plans/{id}": {
+      "get": {
+        "summary": "Read harvest_plans"
+      },
+      "patch": {
+        "summary": "Update harvest_plans"
+      }
+    },
+    "/api/health": {
+      "get": {
+        "summary": "Service health"
+      }
+    },
+    "/api/incidents": {
+      "get": {
+        "summary": "List incidents"
+      },
+      "post": {
+        "summary": "Create incidents"
+      }
+    },
+    "/api/incidents/{id}": {
+      "get": {
+        "summary": "Read incidents"
+      },
+      "patch": {
+        "summary": "Update incidents"
+      }
+    },
+    "/api/inventory_items": {
+      "get": {
+        "summary": "List inventory_items"
+      },
+      "post": {
+        "summary": "Create inventory_items"
+      }
+    },
+    "/api/inventory_items/{id}": {
+      "get": {
+        "summary": "Read inventory_items"
+      },
+      "patch": {
+        "summary": "Update inventory_items"
+      }
+    },
+    "/api/invoices": {
+      "get": {
+        "summary": "List invoices"
+      },
+      "post": {
+        "summary": "Create invoices"
+      }
+    },
+    "/api/invoices/{id}": {
+      "get": {
+        "summary": "Read invoices"
+      },
+      "patch": {
+        "summary": "Update invoices"
+      }
+    },
+    "/api/leave_requests": {
+      "get": {
+        "summary": "List leave_requests"
+      },
+      "post": {
+        "summary": "Create leave_requests"
+      }
+    },
+    "/api/leave_requests/{id}": {
+      "get": {
+        "summary": "Read leave_requests"
+      },
+      "patch": {
+        "summary": "Update leave_requests"
+      }
+    },
+    "/api/maintenance_work_orders": {
+      "get": {
+        "summary": "List maintenance_work_orders"
+      },
+      "post": {
+        "summary": "Create maintenance_work_orders"
+      }
+    },
+    "/api/maintenance_work_orders/{id}": {
+      "get": {
+        "summary": "Read maintenance_work_orders"
+      },
+      "patch": {
+        "summary": "Update maintenance_work_orders"
+      }
+    },
+    "/api/me": {
+      "get": {
+        "summary": "Current user"
+      }
+    },
+    "/api/mobile/check-in": {
+      "post": {
+        "summary": "Employee attendance check-in"
+      }
+    },
+    "/api/mobile/home": {
+      "get": {
+        "summary": "Employee mobile home"
+      }
+    },
+    "/api/mobile/incident": {
+      "post": {
+        "summary": "Employee incident report"
+      }
+    },
+    "/api/mobile/leave-request": {
+      "post": {
+        "summary": "Employee leave request"
+      }
+    },
+    "/api/mobile/sos": {
+      "post": {
+        "summary": "Employee emergency SOS"
+      }
+    },
+    "/api/openapi.json": {
+      "get": {
+        "summary": "Live OpenAPI metadata"
+      }
+    },
+    "/api/packaging_runs": {
+      "get": {
+        "summary": "List packaging_runs"
+      },
+      "post": {
+        "summary": "Create packaging_runs"
+      }
+    },
+    "/api/packaging_runs/{id}": {
+      "get": {
+        "summary": "Read packaging_runs"
+      },
+      "patch": {
+        "summary": "Update packaging_runs"
+      }
+    },
+    "/api/payroll_runs": {
+      "get": {
+        "summary": "List payroll_runs"
+      },
+      "post": {
+        "summary": "Create payroll_runs"
+      }
+    },
+    "/api/payroll_runs/{id}": {
+      "get": {
+        "summary": "Read payroll_runs"
+      },
+      "patch": {
+        "summary": "Update payroll_runs"
+      }
+    },
+    "/api/power_generation": {
+      "get": {
+        "summary": "List power_generation"
+      },
+      "post": {
+        "summary": "Create power_generation"
+      }
+    },
+    "/api/power_generation/{id}": {
+      "get": {
+        "summary": "Read power_generation"
+      },
+      "patch": {
+        "summary": "Update power_generation"
+      }
+    },
+    "/api/production_batches": {
+      "get": {
+        "summary": "List production_batches"
+      },
+      "post": {
+        "summary": "Create production_batches"
+      }
+    },
+    "/api/production_batches/{id}": {
+      "get": {
+        "summary": "Read production_batches"
+      },
+      "patch": {
+        "summary": "Update production_batches"
+      }
+    },
+    "/api/purchase_orders": {
+      "get": {
+        "summary": "List purchase_orders"
+      },
+      "post": {
+        "summary": "Create purchase_orders"
+      }
+    },
+    "/api/purchase_orders/{id}": {
+      "get": {
+        "summary": "Read purchase_orders"
+      },
+      "patch": {
+        "summary": "Update purchase_orders"
+      }
+    },
+    "/api/quality_tests": {
+      "get": {
+        "summary": "List quality_tests"
+      },
+      "post": {
+        "summary": "Create quality_tests"
+      }
+    },
+    "/api/quality_tests/{id}": {
+      "get": {
+        "summary": "Read quality_tests"
+      },
+      "patch": {
+        "summary": "Update quality_tests"
+      }
+    },
+    "/api/reports/operations-summary": {
+      "get": {
+        "summary": "Operations KPI report"
+      }
+    },
+    "/api/sales_orders": {
+      "get": {
+        "summary": "List sales_orders"
+      },
+      "post": {
+        "summary": "Create sales_orders"
+      }
+    },
+    "/api/sales_orders/{id}": {
+      "get": {
+        "summary": "Read sales_orders"
+      },
+      "patch": {
+        "summary": "Update sales_orders"
+      }
+    },
+    "/api/search": {
+      "get": {
+        "summary": "Tenant-safe global search"
+      }
+    },
+    "/api/shifts": {
+      "get": {
+        "summary": "List shifts"
+      },
+      "post": {
+        "summary": "Create shifts"
+      }
+    },
+    "/api/shifts/{id}": {
+      "get": {
+        "summary": "Read shifts"
+      },
+      "patch": {
+        "summary": "Update shifts"
+      }
+    },
+    "/api/support_tickets": {
+      "get": {
+        "summary": "List support_tickets"
+      },
+      "post": {
+        "summary": "Create support_tickets"
+      }
+    },
+    "/api/support_tickets/{id}": {
+      "get": {
+        "summary": "Read support_tickets"
+      },
+      "patch": {
+        "summary": "Update support_tickets"
+      }
+    },
+    "/api/tasks": {
+      "get": {
+        "summary": "List tasks"
+      },
+      "post": {
+        "summary": "Create tasks"
+      }
+    },
+    "/api/tasks/{id}": {
+      "get": {
+        "summary": "Read tasks"
+      },
+      "patch": {
+        "summary": "Update tasks"
+      }
+    },
+    "/api/training_records": {
+      "get": {
+        "summary": "List training_records"
+      },
+      "post": {
+        "summary": "Create training_records"
+      }
+    },
+    "/api/training_records/{id}": {
+      "get": {
+        "summary": "Read training_records"
+      },
+      "patch": {
+        "summary": "Update training_records"
+      }
+    },
+    "/api/vehicles": {
+      "get": {
+        "summary": "List vehicles"
+      },
+      "post": {
+        "summary": "Create vehicles"
+      }
+    },
+    "/api/vehicles/{id}": {
+      "get": {
+        "summary": "Read vehicles"
+      },
+      "patch": {
+        "summary": "Update vehicles"
+      }
+    },
+    "/api/visitor_passes": {
+      "get": {
+        "summary": "List visitor_passes"
+      },
+      "post": {
+        "summary": "Create visitor_passes"
+      }
+    },
+    "/api/visitor_passes/{id}": {
+      "get": {
+        "summary": "Read visitor_passes"
+      },
+      "patch": {
+        "summary": "Update visitor_passes"
+      }
+    },
+    "/api/warehouses": {
+      "get": {
+        "summary": "List warehouses"
+      },
+      "post": {
+        "summary": "Create warehouses"
+      }
+    },
+    "/api/warehouses/{id}": {
+      "get": {
+        "summary": "Read warehouses"
+      },
+      "patch": {
+        "summary": "Update warehouses"
+      }
+    },
+    "/api/weighbridge_tickets": {
+      "get": {
+        "summary": "List weighbridge_tickets"
+      },
+      "post": {
+        "summary": "Create weighbridge_tickets"
+      }
+    },
+    "/api/weighbridge_tickets/{id}": {
+      "get": {
+        "summary": "Read weighbridge_tickets"
+      },
+      "patch": {
+        "summary": "Update weighbridge_tickets"
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ]
+}

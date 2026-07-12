@@ -1,0 +1,80 @@
+{
+  "autoname": "format:FP-.#####",
+  "custom": 0,
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "fields": [
+    {
+      "fieldname": "tenant_id",
+      "fieldtype": "Data",
+      "hidden": 1,
+      "label": "Tenant ID",
+      "read_only": 1
+    },
+    {
+      "fieldname": "vehicle_no",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "in_standard_filter": 0,
+      "label": "Vehicle No"
+    },
+    {
+      "fieldname": "type",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "in_standard_filter": 0,
+      "label": "Type"
+    },
+    {
+      "fieldname": "driver",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "in_standard_filter": 0,
+      "label": "Driver"
+    },
+    {
+      "fieldname": "gps_device",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "in_standard_filter": 0,
+      "label": "Gps Device"
+    },
+    {
+      "fieldname": "capacity_ton",
+      "fieldtype": "Data",
+      "in_list_view": 0,
+      "in_standard_filter": 0,
+      "label": "Capacity Ton"
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "in_list_view": 0,
+      "in_standard_filter": 1,
+      "label": "Status",
+      "options": "Draft\nOpen\nActive\nPending\nApproved\nRejected\nComplete\nClosed"
+    }
+  ],
+  "is_submittable": 0,
+  "module": "FactoryPulse ERP",
+  "name": "FactoryPulse Vehicles",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "read": 1,
+      "role": "FactoryPulse Admin",
+      "write": 1
+    },
+    {
+      "create": 1,
+      "delete": 1,
+      "read": 1,
+      "role": "System Manager",
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "track_changes": 1
+}

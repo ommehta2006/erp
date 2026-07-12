@@ -1,0 +1,80 @@
+{
+  "autoname": "format:FP-.#####",
+  "custom": 0,
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "fields": [
+    {
+      "fieldname": "tenant_id",
+      "fieldtype": "Data",
+      "hidden": 1,
+      "label": "Tenant ID",
+      "read_only": 1
+    },
+    {
+      "fieldname": "employee_code",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "label": "Employee Code"
+    },
+    {
+      "fieldname": "leave_type",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "in_standard_filter": 0,
+      "label": "Leave Type"
+    },
+    {
+      "fieldname": "from_date",
+      "fieldtype": "Date",
+      "in_list_view": 1,
+      "in_standard_filter": 0,
+      "label": "From Date"
+    },
+    {
+      "fieldname": "to_date",
+      "fieldtype": "Date",
+      "in_list_view": 1,
+      "in_standard_filter": 0,
+      "label": "To Date"
+    },
+    {
+      "fieldname": "reason",
+      "fieldtype": "Data",
+      "in_list_view": 0,
+      "in_standard_filter": 0,
+      "label": "Reason"
+    },
+    {
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "in_list_view": 0,
+      "in_standard_filter": 1,
+      "label": "Status",
+      "options": "Draft\nOpen\nActive\nPending\nApproved\nRejected\nComplete\nClosed"
+    }
+  ],
+  "is_submittable": 0,
+  "module": "FactoryPulse ERP",
+  "name": "FactoryPulse Leave",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "read": 1,
+      "role": "FactoryPulse Admin",
+      "write": 1
+    },
+    {
+      "create": 1,
+      "delete": 1,
+      "read": 1,
+      "role": "System Manager",
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "track_changes": 1
+}

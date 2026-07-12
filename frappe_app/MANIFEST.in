@@ -1,0 +1,2 @@
+recursive-include factorypulse_erp *.json *.txt *.py *.html *.js *.css
+include README.md
