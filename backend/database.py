@@ -121,6 +121,7 @@ class Storage:
             or os.getenv("SUPABASE_KEY")
             or ""
         ).strip()
+        self.app_secret = os.getenv("APP_SECRET_KEY", "").strip()
         self.mode = "supabase" if self.supabase_url and self.supabase_key and create_client else "sqlite"
         self.client = create_client(self.supabase_url, self.supabase_key) if self.mode == "supabase" else None
         self.db_path = Path(os.getenv("APP_DATABASE", ROOT / "data" / "factorypulse.sqlite3"))
@@ -222,8 +223,12 @@ class Storage:
                 response = self.client.table(resource).select("*").order("updated_at", desc=True).limit(limit).execute()
                 return [self._normalize(row, resource) for row in response.data]
             except Exception:
-                response = self.client.table("records").select("*").eq("resource", resource).order("updated_at", desc=True).limit(limit).execute()
-                return [self._normalize(row, resource) for row in response.data]
+                try:
+                    response = self.client.table("records").select("*").eq("resource", resource).order("updated_at", desc=True).limit(limit).execute()
+                    return [self._normalize(row, resource) for row in response.data]
+                except Exception:
+                    response = self.client.rpc("list_erp_records", {"api_secret": self.app_secret, "resource_name": resource, "row_limit": limit}).execute()
+                    return [self._normalize(row, resource) for row in response.data]
         con = sqlite3.connect(self.db_path)
         con.row_factory = sqlite3.Row
         rows = con.execute("select * from records where resource = ? order by updated_at desc limit ?", (resource, limit)).fetchall()
@@ -246,12 +251,19 @@ class Storage:
                 response = self.client.table(resource).insert(module_row).execute()
                 return self._normalize(response.data[0], resource)
             except Exception:
-                response = self.client.table("records").insert({
-                    "resource": resource,
-                    "data": clean,
-                    "status": clean.get("status", "Open"),
-                }).execute()
-                return self._normalize(response.data[0], resource)
+                try:
+                    response = self.client.table("records").insert({
+                        "resource": resource,
+                        "data": clean,
+                        "status": clean.get("status", "Open"),
+                    }).execute()
+                    return self._normalize(response.data[0], resource)
+                except Exception as exc:
+                    try:
+                        response = self.client.rpc("create_erp_record", {"api_secret": self.app_secret, "resource_name": resource, "payload": clean}).execute()
+                        return self._normalize(response.data[0], resource)
+                    except Exception as rpc_exc:
+                        raise ValueError("Supabase write is blocked. Run the secure_records_rpc.sql migration or configure a real service role key.") from rpc_exc
         con = sqlite3.connect(self.db_path)
         con.execute("insert into records values (?, ?, ?, ?, ?, ?)", (row["id"], resource, __import__("json").dumps(clean, sort_keys=True), row["status"], now, now))
         con.commit()
