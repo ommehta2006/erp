@@ -215,6 +215,10 @@ class HrShiftRequest(BaseModel):
 class NotificationReadRequest(BaseModel):
     notification_id: str
 
+class AdminJobRunRequest(BaseModel):
+    job_type: str
+    dry_run: bool = False
+
 class BiometricVerificationRequest(BaseModel):
     event_type: str = "day_in"
     attendance_record_id: str | None = None
@@ -1557,6 +1561,7 @@ def _security_dashboard():
             {"surface": "Reports", "permission": "reports:read"},
             {"surface": "Generic record writes", "permission": "records:<department> or department write"},
             {"surface": "Security center", "permission": "admin:security"},
+            {"surface": "Operations jobs", "permission": "admin:ops"},
         ],
     }
 
@@ -1608,6 +1613,146 @@ def _audit_dashboard():
         "actors": [{"label": key, "count": count} for key, count in sorted(actors.items(), key=lambda item: item[1], reverse=True)[:20]],
         "entities": [{"label": key, "count": count} for key, count in sorted(entities.items(), key=lambda item: item[1], reverse=True)[:20]],
     }
+
+def _job_record(job_type: str, actor: str, status: str):
+    return storage.create_record("automation_jobs", {
+        "job_no": _new_ref("JOB"),
+        "system": "FactoryPulse ERP",
+        "job_type": job_type,
+        "schedule": "Manual",
+        "last_run": _now_iso(),
+        "owner": actor,
+        "status": status,
+    })
+
+def _run_missing_day_out_job(actor: str, dry_run: bool):
+    rows = _items("attendance_records", 1000)
+    affected = []
+    for item in rows:
+        data = item.get("data", {})
+        if data.get("day_in_time") and not data.get("day_out_time") and data.get("attendance_status") != "Missing Day Out":
+            affected.append(item)
+    if not dry_run:
+        for item in affected:
+            data = item.get("data", {})
+            storage.update_record("attendance_records", item.get("id", ""), {
+                "attendance_status": "Missing Day Out",
+                "approval_status": "Pending Approval",
+                "hr_remarks": "Detected by missing day-out background job.",
+                "status": "Pending Approval",
+            })
+            _notify_employee(data.get("employee_code", ""), "missing_day_out", "Missing Day Out", f"{data.get('attendance_date', 'Today')} has no Day Out. Submit a correction or contact HR.", data.get("employee_code", ""))
+    return {"affected": len(affected), "records": [_attendance_row_summary(item) for item in affected[:50]]}
+
+def _run_late_mark_job(actor: str, dry_run: bool):
+    policy = _attendance_policy()
+    late_after = _late_after_time(policy)
+    rows = _items("attendance_records", 1000)
+    affected = []
+    for item in rows:
+        data = item.get("data", {})
+        day_in = data.get("day_in_time", "")
+        if day_in and day_in > late_after and data.get("attendance_status") != "Late":
+            affected.append(item)
+    if not dry_run:
+        for item in affected:
+            data = item.get("data", {})
+            minutes_late = max(_minutes_between(late_after, data.get("day_in_time", "")), 0)
+            storage.update_record("attendance_records", item.get("id", ""), {
+                "late_duration_minutes": str(minutes_late),
+                "attendance_status": "Late",
+                "approval_status": data.get("approval_status") or "Approved",
+                "hr_remarks": f"Late mark calculated after {late_after}.",
+                "status": "Late",
+            })
+            _notify_employee(data.get("employee_code", ""), "late_attendance", "Late attendance marked", f"{data.get('attendance_date', 'Today')} Day In was after {late_after}.", data.get("employee_code", ""))
+    return {"affected": len(affected), "late_after_time": late_after, "records": [_attendance_row_summary(item) for item in affected[:50]]}
+
+def _run_notification_delivery_job(actor: str, dry_run: bool):
+    rows = _items("notifications", 1000)
+    pending = [item for item in rows if item.get("data", {}).get("delivery_status", "") in {"", "Pending"} or item.get("status") == "Open"]
+    if not dry_run:
+        for item in pending:
+            storage.update_record("notifications", item.get("id", ""), {
+                "delivery_status": "In App",
+                "status": item.get("data", {}).get("read_status") == "Read" and "Closed" or "Open",
+            })
+    return {"affected": len(pending), "notifications": [item.get("data", {}) for item in pending[:50]]}
+
+def _run_payroll_preparation_job(actor: str, dry_run: bool):
+    employees = _items("employees", 1000)
+    salary_assignments = _items("employee_salary_assignments", 1000)
+    attendance_exceptions = [
+        row for row in _attendance_dashboard()["records"]
+        if row.get("missing_day_out") or row.get("approval_status") in {"Open", "Pending", "Pending Approval"}
+    ]
+    missing_salary = [
+        item.get("data", {}).get("employee_code") or item.get("data", {}).get("email", "")
+        for item in employees
+        if not _salary_assignment_for(item.get("data", {}).get("employee_code") or item.get("data", {}).get("email", ""))
+    ]
+    return {
+        "affected": len(attendance_exceptions) + len(missing_salary),
+        "employees": len(employees),
+        "salary_assignments": len(salary_assignments),
+        "attendance_exceptions": attendance_exceptions[:50],
+        "missing_salary_assignments": missing_salary[:50],
+        "ready_for_payroll": not attendance_exceptions and not missing_salary,
+    }
+
+def _operations_dashboard():
+    jobs = _items("automation_jobs", 200)
+    notifications = _items("notifications", 500)
+    attendance = _attendance_dashboard()
+    return {
+        "stats": {
+            "jobs": len(jobs),
+            "completed_jobs": _status_count(jobs, "Completed"),
+            "dry_runs": len([item for item in jobs if item.get("data", {}).get("schedule") == "Manual Dry Run"]),
+            "notifications_open": _status_count(notifications, "Open"),
+            "missing_day_out": attendance["stats"]["missing_day_out"],
+            "pending_attendance": attendance["stats"]["pending_records"],
+        },
+        "jobs": jobs[:100],
+        "available_jobs": [
+            {"job_type": "missing_day_out_detection", "title": "Missing Day Out Detection", "description": "Find active Day In records without Day Out and send employee notifications."},
+            {"job_type": "late_mark_finalization", "title": "Late Mark Finalization", "description": "Apply HR policy late marks from backend attendance records."},
+            {"job_type": "notification_delivery", "title": "Notification Delivery", "description": "Finalize in-app notification delivery status for open notifications."},
+            {"job_type": "payroll_preparation", "title": "Payroll Preparation", "description": "Check attendance exceptions and missing salary assignments before payroll."},
+        ],
+        "attendance_exceptions": {
+            "missing_day_out": attendance["missing_day_out"][:50],
+            "out_of_fence": attendance["out_of_fence"][:50],
+            "pending_corrections": attendance["pending_corrections"][:50],
+        },
+    }
+
+def _run_operations_job(job_type: str, actor: str, dry_run: bool = False):
+    normalized = job_type.strip().lower()
+    runners = {
+        "missing_day_out_detection": _run_missing_day_out_job,
+        "late_mark_finalization": _run_late_mark_job,
+        "notification_delivery": _run_notification_delivery_job,
+        "payroll_preparation": _run_payroll_preparation_job,
+    }
+    if normalized not in runners:
+        raise HTTPException(status_code=422, detail=f"job_type must be one of: {', '.join(sorted(runners))}")
+    result = runners[normalized](actor, dry_run)
+    job = None
+    if not dry_run:
+        job = _job_record(normalized, actor, "Completed")
+    else:
+        job = storage.create_record("automation_jobs", {
+            "job_no": _new_ref("JOB"),
+            "system": "FactoryPulse ERP",
+            "job_type": normalized,
+            "schedule": "Manual Dry Run",
+            "last_run": _now_iso(),
+            "owner": actor,
+            "status": "Draft",
+        })
+    _write_audit(actor, "run_operations_job", "automation_jobs", job.get("data", {}).get("job_no", job.get("id", "")), {"job_type": normalized, "dry_run": dry_run, "result": result}, "Operations background job executed.")
+    return {"job": job, "result": result, "dashboard": _operations_dashboard()}
 
 def _apply_attendance_correction(request: dict[str, Any], actor: str, comments: str):
     data = request.get("data", {})
@@ -2459,6 +2604,16 @@ def v1_admin_audit_export(email: str = Depends(_verify)):
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=audit-logs.csv"},
     )
+
+@app.get("/api/v1/admin/operations-dashboard")
+def v1_admin_operations_dashboard(email: str = Depends(_verify)):
+    _require_permission(email, "admin:ops")
+    return _operations_dashboard()
+
+@app.post("/api/v1/admin/operations/run")
+def v1_admin_run_operations_job(payload: AdminJobRunRequest, email: str = Depends(_verify)):
+    _require_permission(email, "admin:ops")
+    return _run_operations_job(payload.job_type, email, payload.dry_run)
 
 @app.post("/api/v1/admin/users")
 def v1_admin_create_user(payload: AdminUserCreateRequest, email: str = Depends(_verify)):
