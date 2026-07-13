@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from database import DEPARTMENTS, MODULE_FIELDS, storage
+from database import DEPARTMENTS, MODULE_DESCRIPTIONS, MODULE_FIELDS, storage
 
 load_dotenv()
 load_dotenv(Path(__file__).with_name(".env"))
@@ -117,11 +117,39 @@ def login(payload: LoginRequest):
 
 @app.get("/api/catalog")
 def catalog(_: str = Depends(_verify)):
-    return {"departments": DEPARTMENTS, "modules": MODULE_FIELDS, "database": storage.mode}
+    return {"departments": DEPARTMENTS, "descriptions": MODULE_DESCRIPTIONS, "modules": MODULE_FIELDS, "database": storage.mode}
+
+@app.get("/api/dashboard")
+def dashboard(_: str = Depends(_verify)):
+    return storage.dashboard()
+
+@app.get("/api/mobile/summary")
+def mobile_summary(_: str = Depends(_verify)):
+    summary = storage.dashboard()
+    return {
+        "database": summary["database"],
+        "stats": {
+            "departments": summary["department_count"],
+            "modules": summary["module_count"],
+            "records": summary["record_count"],
+        },
+        "priority_work": summary["priority_work"][:8],
+        "departments": [
+            {
+                "id": item["id"],
+                "name": item["name"],
+                "record_count": item["record_count"],
+                "module_count": item["module_count"],
+            }
+            for item in summary["departments"]
+        ],
+    }
 
 @app.get("/api/departments")
 def departments(_: str = Depends(_verify)):
-    return {"items": [{"id": key, "name": value["name"], "modules": value["modules"]} for key, value in DEPARTMENTS.items()]}
+    dashboard_data = storage.dashboard()
+    counts = {item["id"]: item for item in dashboard_data["departments"]}
+    return {"items": [{"id": key, "name": value["name"], "modules": value["modules"], "description": MODULE_DESCRIPTIONS.get(key, ""), "record_count": counts.get(key, {}).get("record_count", 0)} for key, value in DEPARTMENTS.items()]}
 
 @app.get("/api/departments/{department_id}")
 def department(department_id: str, _: str = Depends(_verify)):
