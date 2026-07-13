@@ -149,7 +149,36 @@ def _records_for_employee(resource: str, employee_code: str, limit: int = 500):
         if (item.get("data") or {}).get("employee_code", "").strip().lower() == employee_code.lower()
     ]
 
-def _attendance_snapshot(employee_code: str):
+def _attendance_policy():
+    default = {
+        "policy_name": "Default Attendance Policy",
+        "late_after_time": "09:15",
+        "grace_minutes": "0",
+        "tracking_interval_minutes": "5",
+        "background_location_required": "Yes",
+        "status": "Active",
+    }
+    try:
+        policies = storage.list_records("attendance_policies", 100)
+    except Exception:
+        return default
+    active = next((row for row in policies if row.get("status") == "Active"), None) or (policies[0] if policies else None)
+    if not active:
+        return default
+    data = active.get("data", {})
+    return {**default, **{key: str(value) for key, value in data.items() if value not in (None, "")}}
+
+def _late_after_time(policy: dict[str, str]) -> str:
+    value = policy.get("late_after_time", "09:15").strip()
+    try:
+        datetime.strptime(value, "%H:%M")
+        return value
+    except ValueError:
+        return "09:15"
+
+def _attendance_snapshot(employee_code: str, policy: dict[str, str] | None = None):
+    policy = policy or _attendance_policy()
+    late_after = _late_after_time(policy)
     today = _today()
     rows = _records_for_employee("attendance", employee_code)
     today_rows = [row for row in rows if row.get("data", {}).get("date") == today]
@@ -158,7 +187,7 @@ def _attendance_snapshot(employee_code: str):
     late = False
     if day_in:
         check_in = day_in.get("data", {}).get("check_in", "")
-        late = bool(check_in and check_in > "09:15")
+        late = bool(check_in and check_in > late_after)
     return {
         "employee_code": employee_code,
         "date": today,
@@ -166,6 +195,7 @@ def _attendance_snapshot(employee_code: str):
         "day_in_time": day_in.get("data", {}).get("check_in") if day_in else "",
         "day_out_time": day_out.get("data", {}).get("check_out") if day_out else "",
         "late_mark": late,
+        "late_after_time": late_after,
         "records_today": len(today_rows),
     }
 
@@ -252,7 +282,8 @@ def mobile_summary(_: str = Depends(_verify)):
 @app.get("/api/mobile/employee/summary")
 def employee_summary(email: str = Depends(_verify)):
     employee_code = _employee_code(email)
-    attendance = _attendance_snapshot(employee_code)
+    policy = _attendance_policy()
+    attendance = _attendance_snapshot(employee_code, policy)
     calendar = _attendance_calendar(employee_code)
     salary = _records_for_employee("salary_slips", employee_code, 12)
     leaves = _records_for_employee("leave_requests", employee_code, 100)
@@ -261,6 +292,7 @@ def employee_summary(email: str = Depends(_verify)):
     return {
         "employee_code": employee_code,
         "attendance": attendance,
+        "attendance_policy": policy,
         "calendar": calendar,
         "leave": {
             "pending": len([row for row in leaves if row.get("status") in {"Open", "Pending"}]),
@@ -280,7 +312,8 @@ def employee_summary(email: str = Depends(_verify)):
 @app.post("/api/mobile/employee/day-in")
 def employee_day_in(payload: EmployeeAttendanceEvent, email: str = Depends(_verify)):
     employee_code = _employee_code(email, payload.employee_code)
-    snapshot = _attendance_snapshot(employee_code)
+    policy = _attendance_policy()
+    snapshot = _attendance_snapshot(employee_code, policy)
     if snapshot["checked_in"]:
         raise HTTPException(status_code=409, detail="Day-in already active. Complete day-out first.")
     data = {
@@ -302,12 +335,13 @@ def employee_day_in(payload: EmployeeAttendanceEvent, email: str = Depends(_veri
             "event": "day_in",
             "status": "Active",
         })
-    return {"item": item, "attendance": _attendance_snapshot(employee_code)}
+    return {"item": item, "attendance": _attendance_snapshot(employee_code, policy), "attendance_policy": policy}
 
 @app.post("/api/mobile/employee/day-out")
 def employee_day_out(payload: EmployeeAttendanceEvent, email: str = Depends(_verify)):
     employee_code = _employee_code(email, payload.employee_code)
-    snapshot = _attendance_snapshot(employee_code)
+    policy = _attendance_policy()
+    snapshot = _attendance_snapshot(employee_code, policy)
     if not snapshot["day_in_time"]:
         raise HTTPException(status_code=409, detail="Day-in is required before day-out.")
     if snapshot["day_out_time"]:
@@ -331,7 +365,7 @@ def employee_day_out(payload: EmployeeAttendanceEvent, email: str = Depends(_ver
             "event": "day_out",
             "status": "Completed",
         })
-    return {"item": item, "attendance": _attendance_snapshot(employee_code)}
+    return {"item": item, "attendance": _attendance_snapshot(employee_code, policy), "attendance_policy": policy}
 
 @app.post("/api/mobile/employee/location")
 def employee_location(payload: EmployeeLocationPing, email: str = Depends(_verify)):
@@ -353,6 +387,10 @@ def employee_location(payload: EmployeeLocationPing, email: str = Depends(_verif
 @app.get("/api/mobile/employee/calendar")
 def employee_calendar(email: str = Depends(_verify)):
     return _attendance_calendar(_employee_code(email))
+
+@app.get("/api/mobile/employee/attendance-policy")
+def employee_attendance_policy(_: str = Depends(_verify)):
+    return _attendance_policy()
 
 @app.get("/api/mobile/employee/salary")
 def employee_salary(email: str = Depends(_verify)):

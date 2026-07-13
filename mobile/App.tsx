@@ -36,7 +36,8 @@ type MobileSummary = {
 };
 type EmployeeSummary = {
   employee_code: string;
-  attendance: { checked_in: boolean; date: string; day_in_time: string; day_out_time: string; late_mark: boolean; records_today: number };
+  attendance: { checked_in: boolean; date: string; day_in_time: string; day_out_time: string; late_mark: boolean; late_after_time: string; records_today: number };
+  attendance_policy: Record<string, string>;
   calendar: AttendanceCalendar;
   leave: { pending: number; approved: number; balances: Record<string, string>[] };
   salary: { latest: Record<string, string> | null; count: number };
@@ -283,14 +284,15 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
   const [toDate, setToDate] = useState("");
   const [reason, setReason] = useState("");
   const [tracking, setTracking] = useState(false);
+  const trackingInterval = Math.max(Number(data?.attendance_policy?.tracking_interval_minutes || 5), 1);
 
   useEffect(() => {
     if (!tracking || !data?.attendance.checked_in) return;
     const timer = setInterval(() => {
       pingLocation(token, "working_hours").catch(() => undefined);
-    }, 5 * 60 * 1000);
+    }, trackingInterval * 60 * 1000);
     return () => clearInterval(timer);
-  }, [data?.attendance.checked_in, token, tracking]);
+  }, [data?.attendance.checked_in, token, tracking, trackingInterval]);
 
   async function attendanceAction(kind: "day-in" | "day-out") {
     setBusy(true);
@@ -318,6 +320,21 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
       Alert.alert("Attendance", err instanceof Error ? err.message : "Attendance action failed");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function toggleTracking() {
+    if (tracking) {
+      setTracking(false);
+      return;
+    }
+    try {
+      await requestBackgroundTrackingPermission();
+      setTracking(true);
+      await pingLocation(token, "working_hours");
+      refresh();
+    } catch (err) {
+      Alert.alert("Location tracking", err instanceof Error ? err.message : "Location permission failed");
     }
   }
 
@@ -365,6 +382,7 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
           <TimeTile label="Day Out" value={data?.attendance.day_out_time || "--:--"} tone="blue" />
           <TimeTile label="Late" value={data?.attendance.late_mark ? "Yes" : "No"} tone={data?.attendance.late_mark ? "red" : "green"} />
         </View>
+        <Text style={styles.policyText}>Late after {data?.attendance.late_after_time || data?.attendance_policy?.late_after_time || "HR policy"} - tracking every {trackingInterval} min</Text>
         <View style={styles.actionRow}>
           <Pressable style={[styles.lightButton, busy && styles.disabledButton]} disabled={busy} onPress={() => attendanceAction("day-in")}>
             <Text style={styles.lightButtonText}>Thumb Day In</Text>
@@ -373,7 +391,7 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
             <Text style={styles.lightButtonText}>Thumb Day Out</Text>
           </Pressable>
         </View>
-        <Pressable style={styles.trackButton} onPress={() => setTracking((value) => !value)}>
+        <Pressable style={styles.trackButton} onPress={toggleTracking}>
           <Ionicons name={tracking ? "location" : "location-outline"} size={18} color="#ffffff" />
           <Text style={styles.trackButtonText}>{tracking ? "Working-hours location tracking active" : "Enable working-hours location tracking"}</Text>
         </Pressable>
@@ -446,6 +464,17 @@ async function currentLocation() {
     throw new Error("Location permission is required for day-in/day-out.");
   }
   return Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+}
+
+async function requestBackgroundTrackingPermission() {
+  const foreground = await Location.requestForegroundPermissionsAsync();
+  if (foreground.status !== "granted") {
+    throw new Error("Location permission is required for working-hours tracking.");
+  }
+  const background = await Location.requestBackgroundPermissionsAsync();
+  if (background.status !== "granted") {
+    throw new Error("Background location permission is required for working-hours tracking.");
+  }
 }
 
 async function pingLocation(token: string, event: string) {
@@ -835,6 +864,7 @@ const styles = StyleSheet.create({
   attendanceLabel: { color: "#ccfbf1", fontSize: 12, fontWeight: "800", textTransform: "uppercase" },
   attendanceTitle: { marginTop: 4, color: "white", fontSize: 24, fontWeight: "900" },
   attendanceTimes: { flexDirection: "row", gap: 8, marginTop: 16 },
+  policyText: { color: "#d1fae5", fontSize: 12, fontWeight: "700", marginTop: 12 },
   timeTile: { flex: 1, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.12)", padding: 10 },
   timeLabel: { color: "#cbd5e1", fontSize: 11, fontWeight: "700" },
   timeValue: { marginTop: 5, fontSize: 16, fontWeight: "900" },

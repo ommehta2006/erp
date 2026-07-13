@@ -16,7 +16,7 @@ except Exception:
 ROOT = Path(__file__).resolve().parents[1]
 
 DEPARTMENTS = {
-    "hr": {"name": "HR & Employee", "modules": ["employees", "attendance", "employee_locations", "leave_requests", "leave_balances", "holiday_calendar", "salary_slips", "shifts", "departments", "payroll_runs", "recruitment", "performance_reviews", "training_records", "expense_claims", "visitor_passes"]},
+    "hr": {"name": "HR & Employee", "modules": ["employees", "attendance", "attendance_policies", "employee_locations", "leave_requests", "leave_balances", "holiday_calendar", "salary_slips", "shifts", "departments", "payroll_runs", "recruitment", "performance_reviews", "training_records", "expense_claims", "visitor_passes"]},
     "finance": {"name": "Finance & Accounts", "modules": ["invoices", "purchase_orders", "sales_orders", "payroll_runs", "budgets", "tax_records", "farmer_payments", "approvals"]},
     "cane": {"name": "Cane & Farmer", "modules": ["farmers", "cane_registrations", "harvest_plans", "vehicles", "weighbridge_tickets", "farmer_payments"]},
     "manufacturing": {"name": "Manufacturing", "modules": ["production_batches", "boiler_logs", "packaging_runs", "byproducts", "power_generation", "distillery_batches", "ethanol_dispatches", "energy_meters"]},
@@ -34,6 +34,7 @@ DEPARTMENTS = {
 MODULE_FIELDS = {
     "employees": ["employee_code", "full_name", "department", "role", "phone", "email", "shift", "status"],
     "attendance": ["employee_code", "date", "shift", "check_in", "check_out", "gps_area", "status"],
+    "attendance_policies": ["policy_name", "late_after_time", "grace_minutes", "tracking_interval_minutes", "background_location_required", "status"],
     "employee_locations": ["employee_code", "timestamp", "latitude", "longitude", "accuracy", "event", "status"],
     "leave_requests": ["employee_code", "leave_type", "from_date", "to_date", "reason", "status"],
     "leave_balances": ["employee_code", "leave_type", "opening_balance", "used_days", "available_days", "period", "status"],
@@ -141,6 +142,7 @@ NUMERIC_FIELD_WORDS = {
     "level",
     "litres",
     "longitude",
+    "minutes",
     "molasses",
     "net",
     "opening",

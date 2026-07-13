@@ -11,11 +11,14 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "FactoryPulse uses your location for Day In, Day Out, and working-hours attendance tracking after you check in."
+        "NSLocationWhenInUseUsageDescription": "FactoryPulse uses your location for Day In, Day Out, and working-hours attendance tracking after you check in.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "FactoryPulse uses background location only during checked-in working hours for attendance compliance.",
+        "NSLocationAlwaysUsageDescription": "FactoryPulse uses background location only during checked-in working hours for attendance compliance.",
+        "UIBackgroundModes": ["location"]
       }
     },
     "android": {
-      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_LOCATION"],
       "adaptiveIcon": {
         "backgroundColor": "#0f172a"
       },
@@ -25,7 +28,10 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "FactoryPulse uses your location for Day In, Day Out, and working-hours attendance tracking after you check in."
+          "locationWhenInUsePermission": "FactoryPulse uses your location for Day In, Day Out, and working-hours attendance tracking after you check in.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ]
     ],
