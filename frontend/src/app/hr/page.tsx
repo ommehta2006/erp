@@ -80,6 +80,7 @@ export default function HrPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Link href="/departments/hr" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:border-teal-600">Full HR Modules</Link>
+            <Link href="/finance" className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-700 hover:border-sky-600">Finance Payroll</Link>
             <Link href="/departments/finance?module=payroll_adjustments" className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">Payroll Adjustments</Link>
           </div>
         </div>

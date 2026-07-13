@@ -6,7 +6,7 @@ import math
 import os
 import time
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -89,6 +89,16 @@ class BiometricVerificationRequest(BaseModel):
     trusted_device_id: str | None = None
     failure_reason: str | None = None
     risk_flags: str | None = None
+
+class PayrollGenerateRequest(BaseModel):
+    period_id: str | None = None
+    period_name: str
+    start_date: str
+    end_date: str
+    company: str | None = None
+    branch: str | None = None
+    department: str | None = None
+    dry_run: bool = False
 
 def _sign(email: str) -> str:
     if not AUTH_CONFIGURED:
@@ -421,6 +431,225 @@ def _hr_overview():
             }
             for item in [*out_of_fence, *pending_approvals][:12]
         ],
+    }
+
+def _parse_iso_date(value: str, field: str) -> date:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"{field} must be YYYY-MM-DD") from exc
+
+def _date_between(value: str, start: date, end: date) -> bool:
+    if not value:
+        return False
+    try:
+        current = datetime.strptime(value[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return False
+    return start <= current <= end
+
+def _money(value: Any, default: float = 0.0) -> float:
+    try:
+        if value in (None, ""):
+            return default
+        return float(str(value).replace(",", ""))
+    except (TypeError, ValueError):
+        return default
+
+def _period_dates(start: date, end: date):
+    current = start
+    while current <= end:
+        yield current
+        current += timedelta(days=1)
+
+def _approved_status(row: dict[str, Any]) -> bool:
+    data = row.get("data", {})
+    status = str(row.get("status") or data.get("status") or "").lower()
+    approval = str(data.get("approval_status") or data.get("approved_status") or "").lower()
+    return approval == "approved" or status in {"active", "approved", "completed"}
+
+def _payroll_employee_codes(assignments: list[dict[str, Any]], employees: list[dict[str, Any]]):
+    codes = []
+    for row in assignments:
+        code = row.get("data", {}).get("employee_code", "")
+        if code and code not in codes:
+            codes.append(code)
+    for row in employees:
+        data = row.get("data", {})
+        code = data.get("employee_code") or data.get("email")
+        if code and code not in codes:
+            codes.append(code)
+    return codes
+
+def _salary_assignment_for(employee_code: str):
+    assignments = _records_for_employee("employee_salary_assignments", employee_code, 100)
+    return _active_record(assignments)
+
+def _payroll_calculation(payload: PayrollGenerateRequest, actor: str):
+    start = _parse_iso_date(payload.start_date, "start_date")
+    end = _parse_iso_date(payload.end_date, "end_date")
+    if end < start:
+        raise HTTPException(status_code=422, detail="end_date must be on or after start_date")
+    total_days = max((end - start).days + 1, 1)
+    period_id = payload.period_id or payload.period_name.replace(" ", "-").upper()
+    run_no = _new_ref("PAY")
+    employees = _items("employees")
+    assignments = _items("employee_salary_assignments")
+    attendance = _items("attendance_records", 1000)
+    legacy_attendance = _items("attendance", 1000)
+    leave_applications = _items("leave_applications", 1000)
+    adjustments = _items("payroll_adjustments", 1000)
+    employee_codes = _payroll_employee_codes(assignments, employees)
+    validation_errors = []
+    results = []
+    totals = {"gross_pay": 0.0, "deductions": 0.0, "net_pay": 0.0, "employees": 0}
+
+    if not employee_codes:
+        validation_errors.append("No employees or salary assignments found for payroll generation.")
+
+    period_item = None
+    run_item = None
+    if not payload.dry_run and employee_codes:
+        period_item = storage.create_record("payroll_periods", {
+            "period_id": period_id,
+            "period_name": payload.period_name,
+            "start_date": payload.start_date,
+            "end_date": payload.end_date,
+            "company": payload.company or "",
+            "branch": payload.branch or "",
+            "attendance_close_status": "Draft",
+            "payroll_status": "Draft",
+            "status": "Draft",
+        })
+
+    for employee_code in employee_codes:
+        salary_assignment = _salary_assignment_for(employee_code)
+        if not salary_assignment:
+            validation_errors.append(f"{employee_code}: no active salary assignment.")
+            continue
+        salary_data = salary_assignment.get("data", {})
+        monthly_gross = _money(salary_data.get("gross_salary") or salary_data.get("ctc"))
+        if monthly_gross <= 0:
+            validation_errors.append(f"{employee_code}: salary assignment has no gross_salary/ctc.")
+            continue
+        present_dates = {
+            row.get("data", {}).get("attendance_date")
+            for row in attendance
+            if row.get("data", {}).get("employee_code", "").lower() == employee_code.lower()
+            and _date_between(row.get("data", {}).get("attendance_date", ""), start, end)
+            and (row.get("data", {}).get("attendance_status") or row.get("status")) in {"Present", "Active", "Approved", "Completed"}
+        }
+        present_dates.update({
+            row.get("data", {}).get("date")
+            for row in legacy_attendance
+            if row.get("data", {}).get("employee_code", "").lower() == employee_code.lower()
+            and _date_between(row.get("data", {}).get("date", ""), start, end)
+            and row.get("data", {}).get("check_in")
+        })
+        paid_leave_days = 0.0
+        unpaid_leave_days = 0.0
+        for row in leave_applications:
+            data = row.get("data", {})
+            if data.get("employee_code", "").lower() != employee_code.lower() or data.get("approval_status") != "Approved":
+                continue
+            if not (_date_between(data.get("start_date", ""), start, end) or _date_between(data.get("end_date", ""), start, end)):
+                continue
+            days = _money(data.get("total_leave_days"), 1.0)
+            if str(data.get("payroll_impact", "")).lower() == "unpaid":
+                unpaid_leave_days += days
+            else:
+                paid_leave_days += days
+        additions = 0.0
+        deductions = 0.0
+        adjustment_lines = []
+        for row in adjustments:
+            data = row.get("data", {})
+            if data.get("employee_code", "").lower() != employee_code.lower() or data.get("payroll_month") != payload.period_name:
+                continue
+            if not _approved_status(row):
+                continue
+            amount = _money(data.get("amount"))
+            if str(data.get("addition_or_deduction", "")).lower() == "deduction":
+                deductions += amount
+            else:
+                additions += amount
+            adjustment_lines.append(data)
+        present_days = len([day for day in present_dates if day])
+        paid_days = min(total_days, present_days + paid_leave_days)
+        prorated_gross = round(monthly_gross * (paid_days / total_days), 2)
+        net_pay = round(prorated_gross + additions - deductions, 2)
+        result_id = _new_ref("PER")
+        result = {
+            "result_id": result_id,
+            "payroll_run": run_no,
+            "employee_code": employee_code,
+            "paid_days": f"{paid_days:.2f}",
+            "present_days": str(present_days),
+            "paid_leave_days": f"{paid_leave_days:.2f}",
+            "unpaid_leave_days": f"{unpaid_leave_days:.2f}",
+            "gross_pay": f"{prorated_gross:.2f}",
+            "deductions": f"{deductions:.2f}",
+            "net_pay": f"{net_pay:.2f}",
+            "validation_status": "Valid",
+            "status": "Draft",
+            "lines": [
+                {"component_name": "Prorated Gross", "component_type": "Earning", "quantity": f"{paid_days:.2f}", "rate": f"{monthly_gross / total_days:.2f}", "amount": f"{prorated_gross:.2f}", "formula": "monthly_gross * paid_days / period_days", "source": "salary_assignment"},
+                *[
+                    {"component_name": line.get("adjustment_type", "Adjustment"), "component_type": line.get("addition_or_deduction", "Addition"), "quantity": line.get("quantity", "1"), "rate": line.get("rate", line.get("amount", "0")), "amount": line.get("amount", "0"), "formula": line.get("calculation_method", "manual"), "source": "payroll_adjustments"}
+                    for line in adjustment_lines
+                ],
+            ],
+        }
+        totals["gross_pay"] += prorated_gross
+        totals["deductions"] += deductions
+        totals["net_pay"] += net_pay
+        totals["employees"] += 1
+        results.append(result)
+        if not payload.dry_run:
+            storage.create_record("payroll_employee_results", {key: value for key, value in result.items() if key != "lines"})
+            for line in result["lines"]:
+                storage.create_record("payroll_calculation_lines", {
+                    "line_id": _new_ref("LINE"),
+                    "result_id": result_id,
+                    "component_name": line["component_name"],
+                    "component_type": line["component_type"],
+                    "quantity": line["quantity"],
+                    "rate": line["rate"],
+                    "amount": line["amount"],
+                    "formula": line["formula"],
+                    "source": line["source"],
+                    "status": "Draft",
+                })
+            storage.create_record("salary_slips", {
+                "employee_code": employee_code,
+                "period": payload.period_name,
+                "gross_pay": f"{prorated_gross:.2f}",
+                "deductions": f"{deductions:.2f}",
+                "net_pay": f"{net_pay:.2f}",
+                "payment_date": "",
+                "status": "Draft",
+            })
+    totals = {key: (round(value, 2) if isinstance(value, float) else value) for key, value in totals.items()}
+    if not payload.dry_run and totals["employees"] > 0:
+        run_item = storage.create_record("payroll_runs", {
+            "run_no": run_no,
+            "period": payload.period_name,
+            "department": payload.department or "All",
+            "gross_pay": f"{totals['gross_pay']:.2f}",
+            "deductions": f"{totals['deductions']:.2f}",
+            "net_pay": f"{totals['net_pay']:.2f}",
+            "approval_status": "Draft",
+            "status": "Draft",
+        })
+    if not payload.dry_run and run_item:
+        _write_audit(actor, "generate_payroll", "payroll_runs", run_no, {"period": payload.period_name, "period_id": period_item.get("id") if period_item else period_id, "totals": totals}, "Draft payroll generated from attendance, leave, salary assignments, and approved adjustments.")
+    return {
+        "run_no": run_no,
+        "period": payload.period_name,
+        "dry_run": payload.dry_run,
+        "totals": totals,
+        "results": results,
+        "validation_errors": validation_errors,
     }
 
 def _persist_location_validation(employee_code: str, payload: LocationValidationRequest, validation: dict[str, Any], attendance_record_id: str = "pending"):
@@ -794,6 +1023,9 @@ def v1_finance_payroll_dashboard(_: str = Depends(_verify)):
     runs = _items("payroll_runs")
     results = _items("payroll_employee_results")
     slips = _items("salary_slips")
+    total_net = sum(_money(row.get("data", {}).get("net_pay")) for row in results)
+    total_gross = sum(_money(row.get("data", {}).get("gross_pay")) for row in results)
+    total_deductions = sum(_money(row.get("data", {}).get("deductions")) for row in results)
     return {
         "stats": {
             "payroll_runs": len(runs),
@@ -801,10 +1033,24 @@ def v1_finance_payroll_dashboard(_: str = Depends(_verify)):
             "adjustments": len(adjustments),
             "pending_adjustments": _status_count(adjustments, "Open", "Pending", "Pending Approval", "Draft"),
             "salary_slips": len(slips),
+            "total_gross": round(total_gross, 2),
+            "total_deductions": round(total_deductions, 2),
+            "total_net": round(total_net, 2),
         },
         "payroll_runs": runs[:20],
+        "employee_results": results[:20],
         "adjustments": adjustments[:20],
     }
+
+@app.post("/api/v1/payroll/generate")
+def v1_generate_payroll(payload: PayrollGenerateRequest, email: str = Depends(_verify)):
+    return _payroll_calculation(payload, email)
+
+@app.post("/api/v1/payroll/validate")
+def v1_validate_payroll(payload: PayrollGenerateRequest, email: str = Depends(_verify)):
+    data = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    data["dry_run"] = True
+    return _payroll_calculation(PayrollGenerateRequest(**data), email)
 
 @app.post("/api/mobile/employee/day-in")
 def employee_day_in(payload: EmployeeAttendanceEvent, email: str = Depends(_verify)):
