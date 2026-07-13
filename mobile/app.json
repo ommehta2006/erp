@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "FactoryPulse Employee",
+    "slug": "factorypulse-employee",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "factorypulse",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0f172a"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "extra": {
+      "apiBase": "https://erp-production-8664.up.railway.app"
+    }
+  }
+}
