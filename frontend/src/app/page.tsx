@@ -76,11 +76,11 @@ const DEPARTMENT_STYLES = [
 ];
 
 const QUICK_LINKS = [
-  { label: "HR Command", href: "/hr", style: "border-teal-200 bg-teal-50 text-teal-800 hover:border-teal-500" },
-  { label: "Finance Payroll", href: "/finance", style: "border-sky-200 bg-sky-50 text-sky-800 hover:border-sky-500" },
+  { label: "HR", href: "/hr", style: "border-teal-200 bg-teal-50 text-teal-800 hover:border-teal-500" },
+  { label: "Finance", href: "/finance", style: "border-sky-200 bg-sky-50 text-sky-800 hover:border-sky-500" },
   { label: "Reports", href: "/reports", style: "border-indigo-200 bg-indigo-50 text-indigo-800 hover:border-indigo-500" },
   { label: "Security", href: "/admin/security", style: "border-rose-200 bg-rose-50 text-rose-800 hover:border-rose-500" },
-  { label: "Employee App", href: "/mobile", style: "border-amber-200 bg-amber-50 text-amber-800 hover:border-amber-500" },
+  { label: "Mobile", href: "/mobile", style: "border-amber-200 bg-amber-50 text-amber-800 hover:border-amber-500" },
 ];
 
 function departmentInitials(name: string) {
@@ -157,8 +157,8 @@ export default function HomePage() {
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase text-teal-700">FactoryPulse ERP</p>
-            <h1 className="mt-1 text-2xl font-semibold text-slate-950">Department workspaces</h1>
-            <p className="mt-1 text-sm text-slate-500">Open every sugar factory department from one live command home.</p>
+            <h1 className="mt-1 text-2xl font-semibold text-slate-950">Department control center</h1>
+            <p className="mt-1 text-sm text-slate-500">Open every sugar factory department from one live ERP home.</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -186,19 +186,19 @@ export default function HomePage() {
       <section className="mx-auto max-w-7xl px-4 py-6">
         {error && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
 
-        <div className="grid gap-4 lg:grid-cols-[1.35fr_0.65fr]">
+        <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
           <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <p className="text-sm font-semibold text-teal-700">All departments</p>
-                <h2 className="mt-2 text-3xl font-semibold text-slate-950">Choose a department card</h2>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                  Each card opens its complete workspace with modules, records, approvals, operational tracking, and live database-backed activity.
+                <h2 className="mt-2 text-3xl font-semibold text-slate-950">Department cards</h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                  Browse every department as a live card with module coverage, record counts, and priority work pulled from the real ERP API.
                 </p>
               </div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:min-w-[440px]">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[440px]">
                 {stats.map((item) => (
-                  <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
                     <div className="text-xs font-medium text-slate-500">{item.label}</div>
                     <div className="mt-1 text-2xl font-semibold text-slate-950">{item.value}</div>
                   </div>
@@ -255,22 +255,22 @@ export default function HomePage() {
           </section>
         </div>
 
-        <section className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <section className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {departments.map((department, index) => {
             const style = styleFor(index);
             const priorityCount = priorityByDepartment.get(department.name) || 0;
-            const modulePreview = department.modules.slice(0, 6);
+            const modulePreview = department.modules.slice(0, 5);
 
             return (
               <Link
                 key={department.id}
                 href={`/departments/${department.id}`}
-                className={`group relative overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg ${style.hover}`}
+                className={`group relative flex min-h-[320px] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-xl ${style.hover}`}
               >
                 <div className={`absolute left-0 top-0 h-1 w-full ${style.line}`} />
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
-                    <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border text-sm font-black ${style.badge}`}>
+                    <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border text-sm font-black shadow-sm ${style.badge}`}>
                       {departmentInitials(department.name)}
                     </div>
                     <div className="min-w-0">
@@ -279,33 +279,33 @@ export default function HomePage() {
                     </div>
                   </div>
                   <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                    {department.record_count}
+                    Live
                   </span>
                 </div>
 
                 <div className="mt-4 grid grid-cols-3 gap-2">
-                  <div className="rounded-lg bg-slate-50 p-3">
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
                     <div className="text-xl font-semibold text-slate-950">{department.module_count}</div>
                     <div className="text-xs text-slate-500">Modules</div>
                   </div>
-                  <div className="rounded-lg bg-slate-50 p-3">
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
                     <div className="text-xl font-semibold text-slate-950">{department.record_count}</div>
                     <div className="text-xs text-slate-500">Records</div>
                   </div>
-                  <div className="rounded-lg bg-slate-50 p-3">
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
                     <div className="text-xl font-semibold text-slate-950">{priorityCount}</div>
                     <div className="text-xs text-slate-500">Priority</div>
                   </div>
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-2">
+                <div className="mt-4 flex flex-1 flex-wrap content-start gap-2">
                   {modulePreview.map((module) => (
-                    <span key={module.resource} className="max-w-full truncate rounded-lg border border-slate-100 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700">
-                      {module.label} <span className="text-slate-400">{module.count}</span>
+                    <span key={module.resource} className="max-w-full truncate rounded-lg border border-slate-100 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm">
+                      {module.label} <span className="ml-1 text-slate-400">{module.count}</span>
                     </span>
                   ))}
                   {department.modules.length > modulePreview.length && (
-                    <span className="rounded-lg bg-slate-950 px-2.5 py-1.5 text-xs font-medium text-white">
+                    <span className="rounded-lg bg-slate-950 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm">
                       +{department.modules.length - modulePreview.length} more
                     </span>
                   )}
