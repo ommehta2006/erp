@@ -24,3 +24,5 @@ frontend/.next/
 # Local tooling noise
 .DS_Store
 Thumbs.db
+all_details
+github
