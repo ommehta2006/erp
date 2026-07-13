@@ -57,12 +57,18 @@ The live catalog includes:
 - Sales & Customer
 - Administration
 
-## ERP Tables
+## SQL Database File
 
-`supabase/schema.sql` creates 45 tables:
+`supabase/schema.sql` is the full database file to run in Supabase SQL Editor. It was validated against a fresh PostgreSQL 16 container.
 
-- 44 module tables used by the current production API.
+It creates 51 tables:
+
+- 44 ERP module tables used by the current production API.
+- 6 platform/system tables: `erp_departments`, `erp_modules`, `app_users`, `audit_events`, `uploaded_files`, `integration_events`.
 - 1 legacy compatibility table: `records`.
+- 9 department catalog rows.
+- 56 department-module mapping rows.
+- Updated-at triggers, RLS enablement, and operational indexes.
 
 Module tables:
 
@@ -155,6 +161,7 @@ Vercel:
 - Fixed Docker CMD JSON-form warning.
 - Fixed Vercel install command ambiguity.
 - Added full Supabase SQL schema with all ERP module tables.
+- Added platform/system SQL tables, catalog metadata, indexes, triggers, and RLS enablement.
 - Updated backend Supabase storage to use module tables directly.
 
 ## Remaining Manual Steps

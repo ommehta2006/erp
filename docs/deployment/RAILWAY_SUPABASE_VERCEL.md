@@ -3,7 +3,7 @@
 Target topology:
 
 - Railway: FastAPI backend from `backend/`
-- Supabase: production Postgres schema with one table per ERP module
+- Supabase: production Postgres schema with ERP module tables and platform/catalog tables
 - Vercel: Next frontend from `frontend/`
 
 Status in this package:
@@ -30,7 +30,7 @@ SUPABASE_SERVICE_ROLE_KEY=<service role key>
 Supabase setup:
 
 1. Open Supabase SQL editor.
-2. Run `supabase/schema.sql`. It creates 44 ERP module tables plus the legacy `records` compatibility table.
+2. Run `supabase/schema.sql`. It creates 51 tables: 44 ERP module tables, 6 platform/system tables, and the legacy `records` compatibility table.
 3. Keep service role key only in Railway, never in Vercel.
 
 Vercel variables:

@@ -4,7 +4,7 @@ FactoryPulse ERP is a deploy-ready factory ERP and employee operations app built
 
 - `backend/`: FastAPI API for Railway or Docker
 - `frontend/`: Next.js app for Vercel
-- `supabase/schema.sql`: full Supabase Postgres schema with one table per ERP module
+- `supabase/schema.sql`: full Supabase Postgres schema with module tables, platform tables, indexes, triggers, and catalog metadata
 - `frappe_app/`: retained native Frappe/ERPNext scaffold for a separate ERPNext path
 
 The app starts empty by design. No demo records are seeded. After login, the home page shows department containers first. Each department opens its own module workspace and reads/writes records through authenticated backend API routes.
@@ -78,7 +78,7 @@ Use the detailed guide in `docs/deployment/RAILWAY_SUPABASE_VERCEL.md`.
 Production target:
 
 - Railway: deploy backend with `APP_ENV=production`, `APP_SECRET_KEY`, bootstrap admin credentials, `CORS_ALLOWED_ORIGINS`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY`.
-- Supabase: run `supabase/schema.sql` before pointing Railway to the database. It creates all ERP module tables plus the legacy `records` compatibility table.
+- Supabase: run `supabase/schema.sql` before pointing Railway to the database. It creates 51 tables: all ERP module tables, platform/catalog tables, and the legacy `records` compatibility table.
 - Vercel: deploy `frontend/` with `NEXT_PUBLIC_API_BASE` set to the Railway backend URL.
 
 ## Verification
