@@ -254,6 +254,65 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HolidayRequest": {
+        "properties": {
+          "calendar_id": {
+            "title": "Calendar Id",
+            "type": "string"
+          },
+          "holiday_date": {
+            "title": "Holiday Date",
+            "type": "string"
+          },
+          "holiday_name": {
+            "title": "Holiday Name",
+            "type": "string"
+          },
+          "holiday_type": {
+            "default": "Company Holiday",
+            "title": "Holiday Type",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "optional_or_mandatory": {
+            "default": "Mandatory",
+            "title": "Optional Or Mandatory",
+            "type": "string"
+          },
+          "paid_status": {
+            "default": "Paid",
+            "title": "Paid Status",
+            "type": "string"
+          },
+          "payroll_impact": {
+            "default": "Paid",
+            "title": "Payroll Impact",
+            "type": "string"
+          },
+          "status": {
+            "default": "Active",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "calendar_id",
+          "holiday_name",
+          "holiday_date"
+        ],
+        "title": "HolidayRequest",
+        "type": "object"
+      },
       "HrEmployeeOnboardingRequest": {
         "properties": {
           "account_last4": {
@@ -642,6 +701,110 @@
         "title": "HrLifecycleEventRequest",
         "type": "object"
       },
+      "LeaveAllocationRequest": {
+        "properties": {
+          "allocated_days": {
+            "title": "Allocated Days",
+            "type": "number"
+          },
+          "employee_code": {
+            "title": "Employee Code",
+            "type": "string"
+          },
+          "expiry_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiry Date"
+          },
+          "leave_type": {
+            "title": "Leave Type",
+            "type": "string"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "status": {
+            "default": "Active",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "employee_code",
+          "leave_type",
+          "period",
+          "allocated_days"
+        ],
+        "title": "LeaveAllocationRequest",
+        "type": "object"
+      },
+      "LeaveApplicationRequest": {
+        "properties": {
+          "approver": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approver"
+          },
+          "employee_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee Code"
+          },
+          "end_date": {
+            "title": "End Date",
+            "type": "string"
+          },
+          "half_day": {
+            "default": false,
+            "title": "Half Day",
+            "type": "boolean"
+          },
+          "leave_type": {
+            "title": "Leave Type",
+            "type": "string"
+          },
+          "payroll_impact": {
+            "default": "Paid",
+            "title": "Payroll Impact",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "start_date": {
+            "title": "Start Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "leave_type",
+          "start_date",
+          "end_date",
+          "reason"
+        ],
+        "title": "LeaveApplicationRequest",
+        "type": "object"
+      },
       "LeaveApplyRequest": {
         "properties": {
           "employee_code": {
@@ -679,6 +842,57 @@
           "reason"
         ],
         "title": "LeaveApplyRequest",
+        "type": "object"
+      },
+      "LeaveDecisionRequest": {
+        "properties": {
+          "application_id": {
+            "title": "Application Id",
+            "type": "string"
+          },
+          "approver": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approver"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "payroll_impact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payroll Impact"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          }
+        },
+        "required": [
+          "application_id",
+          "decision"
+        ],
+        "title": "LeaveDecisionRequest",
         "type": "object"
       },
       "LocationValidationRequest": {
@@ -2121,6 +2335,60 @@
         "summary": "V1 Validate Employee Location"
       }
     },
+    "/api/v1/employee/leave/apply": {
+      "post": {
+        "operationId": "v1_employee_leave_apply_api_v1_employee_leave_apply_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaveApplicationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Employee Leave Apply"
+      }
+    },
     "/api/v1/employee/leave/balance": {
       "get": {
         "operationId": "v1_employee_leave_balance_api_v1_employee_leave_balance_get",
@@ -2544,6 +2812,266 @@
           }
         },
         "summary": "V1 Hr Geofence Dashboard"
+      }
+    },
+    "/api/v1/hr/holidays": {
+      "post": {
+        "operationId": "v1_hr_holiday_api_v1_hr_holidays_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HolidayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Hr Holiday"
+      }
+    },
+    "/api/v1/hr/leave-dashboard": {
+      "get": {
+        "operationId": "v1_hr_leave_dashboard_api_v1_hr_leave_dashboard_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Hr Leave Dashboard"
+      }
+    },
+    "/api/v1/hr/leave/allocations": {
+      "post": {
+        "operationId": "v1_hr_leave_allocation_api_v1_hr_leave_allocations_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaveAllocationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Hr Leave Allocation"
+      }
+    },
+    "/api/v1/hr/leave/applications": {
+      "post": {
+        "operationId": "v1_hr_leave_application_api_v1_hr_leave_applications_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaveApplicationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Hr Leave Application"
+      }
+    },
+    "/api/v1/hr/leave/decision": {
+      "post": {
+        "operationId": "v1_hr_leave_decision_api_v1_hr_leave_decision_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaveDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Hr Leave Decision"
       }
     },
     "/api/v1/hr/overview": {

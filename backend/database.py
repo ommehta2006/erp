@@ -407,6 +407,56 @@ class Storage:
         con.close()
         return row
 
+    def update_record(self, resource: str, record_id: str, payload: dict[str, Any]):
+        fields = self._require_resource(resource)
+        rejected = sorted(set(payload) - set(fields))
+        if rejected:
+            raise ValueError(f"Unknown fields: {', '.join(rejected)}")
+        clean = {key: str(value).strip() for key, value in payload.items() if value is not None}
+        if not clean:
+            raise ValueError("No fields to update")
+        now = int(time.time())
+        if self.mode == "supabase":
+            module_update = {key: clean[key] for key in clean if key != "status"}
+            if "status" in clean:
+                module_update["status"] = clean["status"]
+            try:
+                response = self.client.table(resource).update(module_update).eq("id", record_id).execute()
+                if response.data:
+                    return self._normalize(response.data[0], resource)
+            except Exception:
+                pass
+            try:
+                current = self.client.table("records").select("*").eq("id", record_id).limit(1).execute()
+                if not current.data:
+                    raise ValueError("Record not found")
+                merged = self._normalize(current.data[0], resource)["data"]
+                merged.update(clean)
+                response = self.client.table("records").update({
+                    "data": merged,
+                    "status": merged.get("status", clean.get("status", "Open")),
+                }).eq("id", record_id).execute()
+                return self._normalize(response.data[0], resource)
+            except Exception as exc:
+                raise ValueError("Supabase update is blocked or record was not found.") from exc
+        con = sqlite3.connect(self.db_path)
+        con.row_factory = sqlite3.Row
+        row = con.execute("select * from records where id = ? and resource = ?", (record_id, resource)).fetchone()
+        if not row:
+            con.close()
+            raise ValueError("Record not found")
+        data = __import__("json").loads(row["data"])
+        data.update(clean)
+        status = data.get("status", row["status"])
+        con.execute(
+            "update records set data = ?, status = ?, updated_at = ? where id = ? and resource = ?",
+            (__import__("json").dumps(data, sort_keys=True), status, now, record_id, resource),
+        )
+        con.commit()
+        updated = con.execute("select * from records where id = ? and resource = ?", (record_id, resource)).fetchone()
+        con.close()
+        return self._normalize(dict(updated), resource)
+
     def department(self, department_id: str):
         if department_id not in DEPARTMENTS:
             raise KeyError(department_id)

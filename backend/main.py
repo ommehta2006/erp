@@ -59,6 +59,42 @@ class LeaveApplyRequest(BaseModel):
     to_date: str
     reason: str
 
+class LeaveApplicationRequest(BaseModel):
+    employee_code: str | None = None
+    leave_type: str
+    start_date: str
+    end_date: str
+    half_day: bool = False
+    reason: str
+    approver: str | None = None
+    payroll_impact: str = "Paid"
+
+class LeaveDecisionRequest(BaseModel):
+    application_id: str
+    decision: str
+    remarks: str | None = None
+    approver: str | None = None
+    payroll_impact: str | None = None
+
+class LeaveAllocationRequest(BaseModel):
+    employee_code: str
+    leave_type: str
+    period: str
+    allocated_days: float
+    expiry_date: str | None = None
+    status: str = "Active"
+
+class HolidayRequest(BaseModel):
+    calendar_id: str
+    holiday_name: str
+    holiday_date: str
+    holiday_type: str = "Company Holiday"
+    paid_status: str = "Paid"
+    optional_or_mandatory: str = "Mandatory"
+    payroll_impact: str = "Paid"
+    notes: str | None = None
+    status: str = "Active"
+
 class AttendanceCorrectionRequest(BaseModel):
     attendance_date: str
     requested_day_in_time: str | None = None
@@ -698,6 +734,15 @@ def _parse_iso_date(value: str, field: str) -> date:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"{field} must be YYYY-MM-DD") from exc
 
+def _leave_day_count(start_value: str, end_value: str, half_day: bool = False) -> float:
+    start = _parse_iso_date(start_value, "start_date")
+    end = _parse_iso_date(end_value, "end_date")
+    if end < start:
+        raise HTTPException(status_code=422, detail="end_date must be on or after start_date")
+    if half_day and start == end:
+        return 0.5
+    return float((end - start).days + 1)
+
 def _date_between(value: str, start: date, end: date) -> bool:
     if not value:
         return False
@@ -726,6 +771,124 @@ def _approved_status(row: dict[str, Any]) -> bool:
     status = str(row.get("status") or data.get("status") or "").lower()
     approval = str(data.get("approval_status") or data.get("approved_status") or "").lower()
     return approval == "approved" or status in {"active", "approved", "completed"}
+
+def _latest_leave_approval(application_id: str):
+    approvals = [
+        item for item in _items("leave_approvals", 500)
+        if item.get("data", {}).get("application_id") == application_id
+    ]
+    return approvals[0] if approvals else None
+
+def _effective_leave_status(application: dict[str, Any]) -> str:
+    data = application.get("data", {})
+    approval = _latest_leave_approval(data.get("application_id", ""))
+    if approval:
+        decision = approval.get("data", {}).get("decision", "")
+        if decision in {"Approved", "Rejected", "Cancelled"}:
+            return decision
+    return data.get("approval_status") or application.get("status") or "Pending"
+
+def _leave_application_summary(application: dict[str, Any]):
+    data = application.get("data", {})
+    status = _effective_leave_status(application)
+    return {
+        "id": application.get("id"),
+        "application_id": data.get("application_id"),
+        "employee_code": data.get("employee_code"),
+        "leave_type": data.get("leave_type"),
+        "start_date": data.get("start_date"),
+        "end_date": data.get("end_date"),
+        "half_day": data.get("half_day"),
+        "total_leave_days": data.get("total_leave_days"),
+        "reason": data.get("reason"),
+        "approver": data.get("approver"),
+        "approval_status": status,
+        "payroll_impact": data.get("payroll_impact"),
+        "status": status,
+        "raw": data,
+    }
+
+def _leave_usage_by_employee():
+    usage: dict[tuple[str, str, str], float] = {}
+    for item in _items("leave_applications", 1000):
+        data = item.get("data", {})
+        if _effective_leave_status(item) != "Approved":
+            continue
+        key = (data.get("employee_code", ""), data.get("leave_type", ""), data.get("start_date", "")[:4] or date.today().strftime("%Y"))
+        usage[key] = usage.get(key, 0.0) + _money(data.get("total_leave_days"))
+    return usage
+
+def _leave_balance_rows():
+    usage = _leave_usage_by_employee()
+    rows = []
+    for allocation in _items("leave_allocations", 1000):
+        data = allocation.get("data", {})
+        key = (data.get("employee_code", ""), data.get("leave_type", ""), data.get("period", ""))
+        allocated = _money(data.get("allocated_days"))
+        used = usage.get(key, _money(data.get("used_days")))
+        rows.append({
+            "employee_code": data.get("employee_code"),
+            "leave_type": data.get("leave_type"),
+            "period": data.get("period"),
+            "allocated_days": round(allocated, 2),
+            "used_days": round(used, 2),
+            "available_days": round(max(allocated - used, 0), 2),
+            "expiry_date": data.get("expiry_date"),
+            "status": allocation.get("status"),
+        })
+    return rows
+
+def _leave_dashboard():
+    applications = [_leave_application_summary(item) for item in _items("leave_applications", 1000)]
+    holidays = [item.get("data", {}) for item in _items("holidays", 500)]
+    calendars = [item.get("data", {}) for item in _items("holiday_calendars", 500)]
+    balances = _leave_balance_rows()
+    pending = [item for item in applications if item["approval_status"] in {"Open", "Pending", "Pending Approval", "Draft"}]
+    approved = [item for item in applications if item["approval_status"] == "Approved"]
+    rejected = [item for item in applications if item["approval_status"] == "Rejected"]
+    paid_holidays = [item for item in holidays if str(item.get("paid_status", "")).lower() == "paid"]
+    return {
+        "stats": {
+            "applications": len(applications),
+            "pending": len(pending),
+            "approved": len(approved),
+            "rejected": len(rejected),
+            "balances": len(balances),
+            "holidays": len(holidays),
+            "paid_holidays": len(paid_holidays),
+            "calendars": len(calendars),
+        },
+        "applications": applications[:100],
+        "pending": pending[:50],
+        "balances": balances[:100],
+        "holidays": holidays[:100],
+        "calendars": calendars[:50],
+    }
+
+def _create_leave_application(payload: LeaveApplicationRequest, actor: str, employee_code: str | None = None):
+    code = (employee_code or payload.employee_code or "").strip()
+    if not code:
+        raise HTTPException(status_code=422, detail="employee_code is required.")
+    if not payload.leave_type.strip() or not payload.reason.strip():
+        raise HTTPException(status_code=422, detail="leave_type and reason are required.")
+    days = _leave_day_count(payload.start_date, payload.end_date, payload.half_day)
+    app_id = _new_ref("LEAVE")
+    item = storage.create_record("leave_applications", {
+        "application_id": app_id,
+        "employee_code": code,
+        "leave_type": payload.leave_type.strip(),
+        "start_date": payload.start_date.strip(),
+        "end_date": payload.end_date.strip(),
+        "half_day": "Yes" if payload.half_day else "No",
+        "total_leave_days": f"{days:.2f}",
+        "reason": payload.reason.strip(),
+        "approver": _clean_text(payload.approver),
+        "approval_status": "Pending",
+        "payroll_impact": payload.payroll_impact.strip() or "Paid",
+        "status": "Pending",
+    })
+    _write_audit(actor, "apply_leave", "leave_applications", app_id, item.get("data", {}), payload.reason)
+    return item
 
 def _payroll_employee_codes(assignments: list[dict[str, Any]], employees: list[dict[str, Any]]):
     codes = []
@@ -809,7 +972,7 @@ def _payroll_calculation(payload: PayrollGenerateRequest, actor: str):
         unpaid_leave_days = 0.0
         for row in leave_applications:
             data = row.get("data", {})
-            if data.get("employee_code", "").lower() != employee_code.lower() or data.get("approval_status") != "Approved":
+            if data.get("employee_code", "").lower() != employee_code.lower() or _effective_leave_status(row) != "Approved":
                 continue
             if not (_date_between(data.get("start_date", ""), start, end) or _date_between(data.get("end_date", ""), start, end)):
                 continue
@@ -1215,12 +1378,19 @@ def v1_employee_attendance_correction(payload: AttendanceCorrectionRequest, emai
 @app.get("/api/v1/employee/leave/balance")
 def v1_employee_leave_balance(email: str = Depends(_verify)):
     employee_code = _employee_code(email)
+    balances = [item for item in _leave_balance_rows() if str(item.get("employee_code", "")).lower() == employee_code.lower()]
     return {
-        "balances": _records_for_employee("leave_balances", employee_code, 100),
+        "balances": balances,
         "allocations": _records_for_employee("leave_allocations", employee_code, 100),
-        "applications": _records_for_employee("leave_applications", employee_code, 100),
+        "applications": [_leave_application_summary(item) for item in _records_for_employee("leave_applications", employee_code, 100)],
         "legacy_requests": _records_for_employee("leave_requests", employee_code, 100),
     }
+
+@app.post("/api/v1/employee/leave/apply")
+def v1_employee_leave_apply(payload: LeaveApplicationRequest, email: str = Depends(_verify)):
+    employee_code = _employee_code(email, payload.employee_code)
+    item = _create_leave_application(payload, email, employee_code)
+    return {"item": item, "summary": _leave_application_summary(item)}
 
 @app.post("/api/v1/employee/attendance/validate-location")
 def v1_validate_employee_location(payload: LocationValidationRequest, email: str = Depends(_verify)):
@@ -1303,6 +1473,80 @@ def v1_hr_employee_onboard(payload: HrEmployeeOnboardingRequest, email: str = De
 def v1_hr_employee_lifecycle(payload: HrLifecycleEventRequest, email: str = Depends(_verify)):
     item = _create_lifecycle_event(payload, email)
     return {"item": item, "profile": _employee_bundle(payload.employee_code)}
+
+@app.get("/api/v1/hr/leave-dashboard")
+def v1_hr_leave_dashboard(_: str = Depends(_verify)):
+    return _leave_dashboard()
+
+@app.post("/api/v1/hr/leave/applications")
+def v1_hr_leave_application(payload: LeaveApplicationRequest, email: str = Depends(_verify)):
+    item = _create_leave_application(payload, email, payload.employee_code)
+    return {"item": item, "summary": _leave_application_summary(item), "dashboard": _leave_dashboard()}
+
+@app.post("/api/v1/hr/leave/decision")
+def v1_hr_leave_decision(payload: LeaveDecisionRequest, email: str = Depends(_verify)):
+    decision = payload.decision.strip().title()
+    if decision not in {"Approved", "Rejected", "Cancelled"}:
+        raise HTTPException(status_code=422, detail="decision must be Approved, Rejected, or Cancelled.")
+    applications = _items("leave_applications", 1000)
+    application = next((item for item in applications if item.get("data", {}).get("application_id") == payload.application_id or item.get("id") == payload.application_id), None)
+    if not application:
+        raise HTTPException(status_code=404, detail="Leave application not found.")
+    app_id = application.get("data", {}).get("application_id", payload.application_id)
+    approval = storage.create_record("leave_approvals", {
+        "approval_id": _new_ref("LAP"),
+        "application_id": app_id,
+        "approver": _clean_text(payload.approver) or email,
+        "decision": decision,
+        "remarks": _clean_text(payload.remarks),
+        "decided_at": _now_iso(),
+        "status": decision,
+    })
+    update_payload = {
+        "approval_status": decision,
+        "status": decision,
+    }
+    if payload.payroll_impact:
+        update_payload["payroll_impact"] = payload.payroll_impact.strip()
+    updated = storage.update_record("leave_applications", application.get("id", ""), update_payload)
+    _write_audit(email, "decide_leave", "leave_applications", app_id, {"decision": decision, "remarks": payload.remarks or "", "updated": updated.get("data", {})}, "HR leave decision")
+    return {"approval": approval, "application": _leave_application_summary(updated), "dashboard": _leave_dashboard()}
+
+@app.post("/api/v1/hr/leave/allocations")
+def v1_hr_leave_allocation(payload: LeaveAllocationRequest, email: str = Depends(_verify)):
+    if not payload.employee_code.strip() or not payload.leave_type.strip() or payload.allocated_days < 0:
+        raise HTTPException(status_code=422, detail="employee_code, leave_type, and non-negative allocated_days are required.")
+    item = storage.create_record("leave_allocations", {
+        "allocation_id": _new_ref("LALLOC"),
+        "employee_code": payload.employee_code.strip(),
+        "leave_type": payload.leave_type.strip(),
+        "period": payload.period.strip(),
+        "allocated_days": f"{payload.allocated_days:.2f}",
+        "used_days": "0.00",
+        "available_days": f"{payload.allocated_days:.2f}",
+        "expiry_date": _clean_text(payload.expiry_date),
+        "status": payload.status.strip() or "Active",
+    })
+    _write_audit(email, "allocate_leave", "leave_allocations", item.get("id", ""), item.get("data", {}), "HR leave allocation")
+    return {"item": item, "dashboard": _leave_dashboard()}
+
+@app.post("/api/v1/hr/holidays")
+def v1_hr_holiday(payload: HolidayRequest, email: str = Depends(_verify)):
+    _parse_iso_date(payload.holiday_date, "holiday_date")
+    item = storage.create_record("holidays", {
+        "holiday_id": _new_ref("HOL"),
+        "calendar_id": payload.calendar_id.strip(),
+        "holiday_name": payload.holiday_name.strip(),
+        "holiday_date": payload.holiday_date.strip(),
+        "holiday_type": payload.holiday_type.strip(),
+        "paid_status": payload.paid_status.strip(),
+        "optional_or_mandatory": payload.optional_or_mandatory.strip(),
+        "payroll_impact": payload.payroll_impact.strip(),
+        "notes": _clean_text(payload.notes),
+        "status": payload.status.strip() or "Active",
+    })
+    _write_audit(email, "create_holiday", "holidays", item.get("id", ""), item.get("data", {}), "HR holiday creation")
+    return {"item": item, "dashboard": _leave_dashboard()}
 
 @app.get("/api/v1/hr/geofence-dashboard")
 def v1_hr_geofence_dashboard(_: str = Depends(_verify)):
@@ -1492,6 +1736,13 @@ def employee_leave(payload: LeaveApplyRequest, email: str = Depends(_verify)):
     employee_code = _employee_code(email, payload.employee_code)
     if not payload.leave_type.strip() or not payload.from_date.strip() or not payload.to_date.strip():
         raise HTTPException(status_code=422, detail="Leave type, from date, and to date are required.")
+    application = _create_leave_application(LeaveApplicationRequest(
+        employee_code=employee_code,
+        leave_type=payload.leave_type,
+        start_date=payload.from_date,
+        end_date=payload.to_date,
+        reason=payload.reason,
+    ), email, employee_code)
     item = storage.create_record("leave_requests", {
         "employee_code": employee_code,
         "leave_type": payload.leave_type.strip(),
@@ -1500,7 +1751,7 @@ def employee_leave(payload: LeaveApplyRequest, email: str = Depends(_verify)):
         "reason": payload.reason.strip(),
         "status": "Pending",
     })
-    return {"item": item}
+    return {"item": item, "application": application}
 
 @app.get("/api/departments")
 def departments(_: str = Depends(_verify)):
