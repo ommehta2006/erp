@@ -29,7 +29,7 @@ The module catalog covers employees, attendance, leave, shifts, payroll, recruit
 
 - Bearer-token authentication with HMAC-signed expiring tokens.
 - Constant-time password comparison.
-- Required `APP_SECRET_KEY` and `BOOTSTRAP_ADMIN_PASSWORD`; the API refuses to start without them.
+- Required `APP_SECRET_KEY` and `BOOTSTRAP_ADMIN_PASSWORD`; healthcheck stays available without them, but login and protected APIs return `503` until they are configured.
 - CORS allowlist through `CORS_ALLOWED_ORIGINS`.
 - Server-side module allowlists; unknown modules are rejected.
 - Supabase service role key is backend-only and must never be exposed to Vercel.

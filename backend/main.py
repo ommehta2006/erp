@@ -20,9 +20,7 @@ app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True
 ADMIN_EMAIL = os.getenv("BOOTSTRAP_ADMIN_EMAIL", "admin@factorypulse.local")
 ADMIN_PASSWORD = os.getenv("BOOTSTRAP_ADMIN_PASSWORD", "")
 APP_SECRET_KEY = os.getenv("APP_SECRET_KEY", "")
-
-if not ADMIN_PASSWORD or not APP_SECRET_KEY:
-    raise RuntimeError("BOOTSTRAP_ADMIN_PASSWORD and APP_SECRET_KEY must be set before starting the API")
+AUTH_CONFIGURED = bool(ADMIN_PASSWORD and APP_SECRET_KEY)
 
 class LoginRequest(BaseModel):
     email: str
@@ -32,11 +30,15 @@ class RecordCreate(BaseModel):
     data: dict[str, Any]
 
 def _sign(email: str) -> str:
+    if not AUTH_CONFIGURED:
+        raise HTTPException(status_code=503, detail="Authentication is not configured")
     payload = f"{email}:{int(time.time()) + 28800}"
     sig = hmac.new(APP_SECRET_KEY.encode(), payload.encode(), "sha256").hexdigest()
     return f"{payload}:{sig}"
 
 def _verify(authorization: str | None = Header(default=None)) -> str:
+    if not AUTH_CONFIGURED:
+        raise HTTPException(status_code=503, detail="Authentication is not configured")
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
     token = authorization.removeprefix("Bearer ")
@@ -52,14 +54,16 @@ def _verify(authorization: str | None = Header(default=None)) -> str:
 
 @app.get("/")
 def root():
-    return {"service": "FactoryPulse Global ERP API", "version": "0.5.0", "database": storage.mode}
+    return {"service": "FactoryPulse Global ERP API", "version": "0.5.0", "database": storage.mode, "auth_configured": AUTH_CONFIGURED}
 
 @app.get("/api/health")
 def health():
-    return {"status": "healthy", "database": storage.mode, "departments": len(DEPARTMENTS), "modules": len(MODULE_FIELDS)}
+    return {"status": "healthy", "database": storage.mode, "auth_configured": AUTH_CONFIGURED, "departments": len(DEPARTMENTS), "modules": len(MODULE_FIELDS)}
 
 @app.post("/api/auth/login")
 def login(payload: LoginRequest):
+    if not AUTH_CONFIGURED:
+        raise HTTPException(status_code=503, detail="Authentication is not configured")
     if payload.email != ADMIN_EMAIL or not hmac.compare_digest(payload.password, ADMIN_PASSWORD):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     return {"token": _sign(payload.email), "user": {"email": payload.email, "name": "FactoryPulse Admin", "role": "FACTORY_ADMIN"}}

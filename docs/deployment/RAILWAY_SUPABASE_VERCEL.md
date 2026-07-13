@@ -13,6 +13,7 @@ Status in this package:
 - Storage falls back to local SQLite for Docker/local testing.
 - Frontend calls backend through `NEXT_PUBLIC_API_BASE`.
 - App is empty by default. No demo seed records are inserted.
+- `/api/health` is public for Railway healthchecks. Login and protected APIs return `503` until `APP_SECRET_KEY` and `BOOTSTRAP_ADMIN_PASSWORD` are configured.
 
 Railway variables:
 
