@@ -25,6 +25,7 @@ BOOTSTRAP_ADMIN_PASSWORD=<strong password>
 CORS_ALLOWED_ORIGINS=https://<your-vercel-app>.vercel.app
 SUPABASE_URL=https://<project>.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<service role key>
+# or SUPABASE_SECRET_KEY=<secret key>
 ```
 
 Supabase setup:

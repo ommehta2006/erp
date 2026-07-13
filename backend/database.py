@@ -76,7 +76,12 @@ MODULE_FIELDS = {
 class Storage:
     def __init__(self):
         self.supabase_url = os.getenv("SUPABASE_URL", "").strip()
-        self.supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", os.getenv("SUPABASE_KEY", "")).strip()
+        self.supabase_key = (
+            os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+            or os.getenv("SUPABASE_SECRET_KEY")
+            or os.getenv("SUPABASE_KEY")
+            or ""
+        ).strip()
         self.mode = "supabase" if self.supabase_url and self.supabase_key and create_client else "sqlite"
         self.client = create_client(self.supabase_url, self.supabase_key) if self.mode == "supabase" else None
         self.db_path = Path(os.getenv("APP_DATABASE", ROOT / "data" / "factorypulse.sqlite3"))

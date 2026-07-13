@@ -95,6 +95,8 @@ BOOTSTRAP_ADMIN_PASSWORD=REPLACE_WITH_STRONG_PASSWORD
 CORS_ALLOWED_ORIGINS=https://YOUR-VERCEL-APP.vercel.app
 SUPABASE_URL=https://YOUR-SUPABASE-PROJECT.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=REPLACE_WITH_SUPABASE_SERVICE_ROLE_OR_SECRET_KEY
+# Alternative accepted backend alias:
+# SUPABASE_SECRET_KEY=REPLACE_WITH_SUPABASE_SECRET_KEY
 APP_DATABASE=./data/factorypulse.sqlite3
 ```
 
@@ -141,7 +143,7 @@ Railway:
 - Use latest `master`.
 - Healthcheck path: `/api/health`.
 - Required for usable login: `APP_SECRET_KEY`, `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD`.
-- Required for Supabase storage: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
+- Required for Supabase storage: `SUPABASE_URL` plus either `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_SECRET_KEY`.
 
 Vercel:
 
