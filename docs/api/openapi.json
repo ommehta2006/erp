@@ -2574,6 +2574,94 @@
         "summary": "Operations Incidents"
       }
     },
+    "/api/v1/admin/audit-dashboard": {
+      "get": {
+        "operationId": "v1_admin_audit_dashboard_api_v1_admin_audit_dashboard_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Admin Audit Dashboard"
+      }
+    },
+    "/api/v1/admin/audit/export": {
+      "get": {
+        "operationId": "v1_admin_audit_export_api_v1_admin_audit_export_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Admin Audit Export"
+      }
+    },
     "/api/v1/admin/security-dashboard": {
       "get": {
         "operationId": "v1_admin_security_dashboard_api_v1_admin_security_dashboard_get",

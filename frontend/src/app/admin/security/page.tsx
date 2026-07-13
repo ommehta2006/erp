@@ -119,7 +119,7 @@ export default function AdminSecurityPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Link href="/reports" className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 hover:border-indigo-600">Reports</Link>
-            <Link href="/departments/admin?module=audit_logs" className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">Audit Logs</Link>
+            <Link href="/admin/audit" className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">Audit Logs</Link>
           </div>
         </div>
       </header>

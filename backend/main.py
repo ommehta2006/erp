@@ -1560,6 +1560,55 @@ def _security_dashboard():
         ],
     }
 
+def _audit_row(item: dict[str, Any]):
+    data = item.get("data", {})
+    return {
+        "id": item.get("id", ""),
+        "audit_id": data.get("audit_id", item.get("id", "")),
+        "actor": data.get("actor", ""),
+        "action": data.get("action", ""),
+        "entity_type": data.get("entity_type", ""),
+        "entity_id": data.get("entity_id", ""),
+        "reason": data.get("reason", ""),
+        "ip_address": data.get("ip_address", ""),
+        "device_info": data.get("device_info", ""),
+        "approval_reference": data.get("approval_reference", ""),
+        "status": item.get("status") or data.get("status", ""),
+        "new_values": data.get("new_values", ""),
+        "previous_values": data.get("previous_values", ""),
+    }
+
+def _audit_dashboard():
+    rows = [_audit_row(item) for item in _items("audit_logs", 1000)]
+    permission_denied = [row for row in rows if row["action"] == "permission_denied"]
+    sensitive = [
+        row for row in rows
+        if row["entity_type"] in {"attendance_records", "payroll_runs", "payroll_adjustments", "employees", "app_users", "rbac"}
+    ]
+    actions: dict[str, int] = {}
+    actors: dict[str, int] = {}
+    entities: dict[str, int] = {}
+    for row in rows:
+        actions[row["action"] or "unknown"] = actions.get(row["action"] or "unknown", 0) + 1
+        actors[row["actor"] or "unknown"] = actors.get(row["actor"] or "unknown", 0) + 1
+        entities[row["entity_type"] or "unknown"] = entities.get(row["entity_type"] or "unknown", 0) + 1
+    return {
+        "stats": {
+            "events": len(rows),
+            "permission_denied": len(permission_denied),
+            "sensitive_events": len(sensitive),
+            "actors": len(actors),
+            "actions": len(actions),
+            "entities": len(entities),
+        },
+        "events": rows[:500],
+        "permission_denied": permission_denied[:100],
+        "sensitive_events": sensitive[:100],
+        "actions": [{"label": key, "count": count} for key, count in sorted(actions.items(), key=lambda item: item[1], reverse=True)[:20]],
+        "actors": [{"label": key, "count": count} for key, count in sorted(actors.items(), key=lambda item: item[1], reverse=True)[:20]],
+        "entities": [{"label": key, "count": count} for key, count in sorted(entities.items(), key=lambda item: item[1], reverse=True)[:20]],
+    }
+
 def _apply_attendance_correction(request: dict[str, Any], actor: str, comments: str):
     data = request.get("data", {})
     employee_code = data.get("employee_code", "")
@@ -2393,6 +2442,23 @@ def v1_reports_dashboard(email: str = Depends(_verify)):
 def v1_admin_security_dashboard(email: str = Depends(_verify)):
     _require_permission(email, "admin:security")
     return _security_dashboard()
+
+@app.get("/api/v1/admin/audit-dashboard")
+def v1_admin_audit_dashboard(email: str = Depends(_verify)):
+    _require_permission(email, "admin:audit")
+    return _audit_dashboard()
+
+@app.get("/api/v1/admin/audit/export")
+def v1_admin_audit_export(email: str = Depends(_verify)):
+    _require_permission(email, "admin:audit")
+    csv = _csv_from_rows(_audit_dashboard()["events"], [
+        "audit_id", "actor", "action", "entity_type", "entity_id", "reason", "status", "ip_address", "device_info", "approval_reference",
+    ])
+    return Response(
+        content=csv,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=audit-logs.csv"},
+    )
 
 @app.post("/api/v1/admin/users")
 def v1_admin_create_user(payload: AdminUserCreateRequest, email: str = Depends(_verify)):
