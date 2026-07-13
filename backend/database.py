@@ -125,6 +125,23 @@ class Storage:
         con.close()
         return dict(row) if row else None
 
+    def authenticate_user(self, email: str, password: str):
+        email = email.strip().lower()
+        if self.mode != "supabase":
+            return None
+        try:
+            response = self.client.rpc("login_app_user", {"login_email": email, "login_password": password}).execute()
+        except Exception:
+            return None
+        if not response.data:
+            return None
+        user = response.data[0] if isinstance(response.data, list) else response.data
+        return {
+            "email": user.get("email") or email,
+            "name": user.get("full_name") or "FactoryPulse Admin",
+            "role": user.get("role") or "FACTORY_ADMIN",
+        }
+
     def record_login_success(self, email: str):
         email = email.strip().lower()
         now = int(time.time())

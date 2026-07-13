@@ -63,6 +63,9 @@ def _locked_until_epoch(value: Any) -> int:
 
 def _login_user(email: str, password: str):
     email = email.strip().lower()
+    rpc_user = storage.authenticate_user(email, password)
+    if rpc_user:
+        return rpc_user
     user = storage.get_user_by_email(email)
     if user and user.get("status", "Active") != "Active":
         raise HTTPException(status_code=401, detail="Invalid email or password")

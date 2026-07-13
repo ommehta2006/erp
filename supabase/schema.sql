@@ -104,6 +104,61 @@ alter table public.audit_events enable row level security;
 alter table public.uploaded_files enable row level security;
 alter table public.integration_events enable row level security;
 
+create or replace function public.login_app_user(login_email text, login_password text)
+returns table(email text, full_name text, role text, status text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_user public.app_users%rowtype;
+  next_failed_count integer;
+begin
+  select *
+    into target_user
+    from public.app_users
+    where lower(app_users.email) = lower(login_email)
+    limit 1;
+
+  if not found or target_user.status <> 'Active' then
+    return;
+  end if;
+
+  if target_user.locked_until is not null
+      and target_user.locked_until > extract(epoch from now())::bigint then
+    return;
+  end if;
+
+  if target_user.password_hash is not null
+      and target_user.password_hash = crypt(login_password, target_user.password_hash) then
+    update public.app_users
+      set failed_login_count = 0,
+          locked_until = null,
+          last_login_at = now(),
+          updated_at = now()
+      where id = target_user.id;
+
+    return query
+      select target_user.email, target_user.full_name, target_user.role, target_user.status;
+    return;
+  end if;
+
+  next_failed_count := coalesce(target_user.failed_login_count, 0) + 1;
+
+  update public.app_users
+    set failed_login_count = next_failed_count,
+        locked_until = case
+          when next_failed_count >= 5 then extract(epoch from now() + interval '15 minutes')::bigint
+          else target_user.locked_until
+        end,
+        updated_at = now()
+    where id = target_user.id;
+end;
+$$;
+
+revoke all on function public.login_app_user(text, text) from public;
+grant execute on function public.login_app_user(text, text) to anon, authenticated, service_role;
+
 -- HR & Employee
 create table if not exists public.employees (
   id uuid primary key default gen_random_uuid(),
@@ -786,3 +841,29 @@ begin
     execute format('create trigger trg_%I_updated_at before update on public.%I for each row execute function public.set_updated_at()', table_name, table_name);
   end loop;
 end $$;
+
+insert into public.app_users (
+  email,
+  password_hash,
+  full_name,
+  role,
+  status,
+  failed_login_count,
+  locked_until
+) values (
+  'admin@gmail.com',
+  crypt('admin', gen_salt('bf', 12)),
+  'FactoryPulse Admin',
+  'FACTORY_ADMIN',
+  'Active',
+  0,
+  null
+)
+on conflict (email) do update set
+  password_hash = crypt('admin', gen_salt('bf', 12)),
+  full_name = excluded.full_name,
+  role = excluded.role,
+  status = 'Active',
+  failed_login_count = 0,
+  locked_until = null,
+  updated_at = now();
