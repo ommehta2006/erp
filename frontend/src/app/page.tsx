@@ -99,6 +99,7 @@ export default function HomePage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">DB {dashboard?.database || "checking"}</span>
+            <Link className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-700 hover:border-teal-600" href="/hr">HR Command</Link>
             <Link className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:border-teal-600" href="/mobile">Mobile view</Link>
             <button className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800" onClick={() => { localStorage.removeItem("factorypulse_token"); router.push("/login"); }}>Logout</button>
           </div>

@@ -336,6 +336,86 @@ def _write_audit(actor: str, action: str, entity_type: str, entity_id: str, new_
     except Exception:
         pass
 
+def _items(resource: str, limit: int = 500):
+    try:
+        return storage.list_records(resource, limit)
+    except Exception:
+        return []
+
+def _status_count(items: list[dict[str, Any]], *statuses: str) -> int:
+    wanted = {status.lower() for status in statuses}
+    return len([item for item in items if str(item.get("status", "")).lower() in wanted])
+
+def _resource_summary(resource: str, label: str):
+    items = _items(resource)
+    return {
+        "resource": resource,
+        "label": label,
+        "count": len(items),
+        "active": _status_count(items, "Active", "Approved", "Present", "Passed"),
+        "pending": _status_count(items, "Pending", "Pending Approval", "Open", "Draft"),
+        "failed": _status_count(items, "Failed", "Rejected", "Out of Fence", "Critical"),
+    }
+
+def _hr_overview():
+    employees = _items("employees")
+    work_locations = _items("work_locations")
+    geofences = _items("geofences")
+    assignments = _items("employee_location_assignments")
+    attendance = _items("attendance_records")
+    validation_results = _items("attendance_validation_results")
+    biometric_events = _items("attendance_biometric_events")
+    leave_applications = _items("leave_applications")
+    correction_requests = _items("attendance_correction_requests")
+    payroll_adjustments = _items("payroll_adjustments")
+    salary_slips = _items("salary_slips")
+    out_of_fence = [
+        item for item in validation_results
+        if (item.get("data", {}).get("geofence_status") or item.get("status")) in {"Outside Fence", "Accuracy Rejected", "Geofence Not Assigned"}
+    ]
+    pending_approvals = [
+        item for item in [*attendance, *leave_applications, *correction_requests, *payroll_adjustments]
+        if item.get("status") in {"Open", "Pending", "Pending Approval", "Draft"}
+    ]
+    return {
+        "stats": {
+            "employees": len(employees),
+            "active_employees": _status_count(employees, "Active", "Approved"),
+            "work_locations": len(work_locations),
+            "geofences": len(geofences),
+            "location_assignments": len(assignments),
+            "attendance_records": len(attendance),
+            "out_of_fence_attempts": len(out_of_fence),
+            "pending_approvals": len(pending_approvals),
+            "biometric_events": len(biometric_events),
+            "leave_applications": len(leave_applications),
+            "salary_slips": len(salary_slips),
+        },
+        "sections": [
+            _resource_summary("employees", "Employee Directory"),
+            _resource_summary("work_locations", "Work Locations"),
+            _resource_summary("geofences", "Geofence Management"),
+            _resource_summary("employee_location_assignments", "Location Assignments"),
+            _resource_summary("attendance_records", "Attendance Records"),
+            _resource_summary("attendance_validation_results", "Validation Results"),
+            _resource_summary("attendance_biometric_events", "Biometric Events"),
+            _resource_summary("attendance_correction_requests", "Correction Requests"),
+            _resource_summary("leave_applications", "Leave Applications"),
+            _resource_summary("payroll_adjustments", "Payroll Adjustments"),
+            _resource_summary("audit_logs", "Audit Logs"),
+        ],
+        "exceptions": [
+            {
+                "resource": item.get("resource"),
+                "id": item.get("id"),
+                "employee_code": item.get("data", {}).get("employee_code", ""),
+                "status": item.get("data", {}).get("geofence_status") or item.get("status"),
+                "reason": item.get("data", {}).get("validation_reason") or item.get("data", {}).get("reason") or "",
+            }
+            for item in [*out_of_fence, *pending_approvals][:12]
+        ],
+    }
+
 def _persist_location_validation(employee_code: str, payload: LocationValidationRequest, validation: dict[str, Any], attendance_record_id: str = "pending"):
     event_id = _new_ref("LOC")
     storage.create_record("attendance_location_events", {
@@ -625,6 +705,43 @@ def v1_employee_biometric(payload: BiometricVerificationRequest, email: str = De
     })
     _write_audit(email, "biometric_verification", "attendance_biometric_events", event_id, item.get("data", {}), "OS biometric result metadata only.")
     return {"item": item, "biometric_privacy": "Raw fingerprints and biometric templates are not captured, transmitted, or stored."}
+
+@app.get("/api/v1/hr/overview")
+def v1_hr_overview(_: str = Depends(_verify)):
+    return _hr_overview()
+
+@app.get("/api/v1/hr/geofence-dashboard")
+def v1_hr_geofence_dashboard(_: str = Depends(_verify)):
+    overview = _hr_overview()
+    return {
+        "stats": {
+            "work_locations": overview["stats"]["work_locations"],
+            "geofences": overview["stats"]["geofences"],
+            "assignments": overview["stats"]["location_assignments"],
+            "out_of_fence_attempts": overview["stats"]["out_of_fence_attempts"],
+        },
+        "validation_results": _items("attendance_validation_results", 100),
+        "work_locations": _items("work_locations", 100),
+        "geofences": _items("geofences", 100),
+    }
+
+@app.get("/api/v1/finance/payroll-dashboard")
+def v1_finance_payroll_dashboard(_: str = Depends(_verify)):
+    adjustments = _items("payroll_adjustments")
+    runs = _items("payroll_runs")
+    results = _items("payroll_employee_results")
+    slips = _items("salary_slips")
+    return {
+        "stats": {
+            "payroll_runs": len(runs),
+            "employee_results": len(results),
+            "adjustments": len(adjustments),
+            "pending_adjustments": _status_count(adjustments, "Open", "Pending", "Pending Approval", "Draft"),
+            "salary_slips": len(slips),
+        },
+        "payroll_runs": runs[:20],
+        "adjustments": adjustments[:20],
+    }
 
 @app.post("/api/mobile/employee/day-in")
 def employee_day_in(payload: EmployeeAttendanceEvent, email: str = Depends(_verify)):

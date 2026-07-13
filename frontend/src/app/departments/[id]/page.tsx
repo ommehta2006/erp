@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { use, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
-const STATUSES = ["Open", "Active", "Pending", "Approved", "Rejected", "Completed", "Closed", "On Hold", "Critical"];
+const STATUSES = ["Open", "Active", "Inactive", "Pending", "Approved", "Rejected", "Completed", "Closed", "On Hold", "Critical", "Draft", "Locked", "Paid", "Cancelled", "Reversed", "Present", "Absent", "Half Day", "Late", "Early Exit", "Overtime", "Out of Fence", "Pending Approval", "Attendance Corrected", "Failed", "Passed"];
+const NUMERIC_FIELD_WORDS = new Set(["accuracy", "acres", "amount", "available", "balance", "budget", "capacity", "deductions", "distance", "gross", "hours", "latitude", "litres", "longitude", "minutes", "net", "opening", "pay", "percent", "quantity", "radius", "rate", "score", "speed", "spent", "tonnage", "used", "weight"]);
 
 type Module = { resource: string; label: string; fields: string[]; count: number; items: { id: string; data: Record<string, string>; status: string }[] };
 type Department = { id: string; name: string; modules: Module[] };
@@ -20,7 +21,7 @@ function fieldType(field: string) {
   const lowered = field.toLowerCase();
   if (lowered.includes("email")) return "email";
   if (lowered.includes("date") || lowered.includes("until") || lowered.includes("due")) return "date";
-  if (["amount", "budget", "spent", "quantity", "percent", "score", "weight", "tonnage", "kwh", "litres", "kl", "ph", "bod", "cod"].some((token) => lowered.includes(token))) return "number";
+  if (lowered.split("_").some((word) => NUMERIC_FIELD_WORDS.has(word))) return "number";
   return "text";
 }
 
@@ -31,6 +32,8 @@ function labelFor(field: string) {
 export default function DepartmentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const moduleParam = searchParams.get("module");
   const [department, setDepartment] = useState<Department | null>(null);
   const [active, setActive] = useState("");
   const [formData, setFormData] = useState<Record<string, string>>({ status: "Open" });
@@ -39,10 +42,13 @@ export default function DepartmentPage({ params }: { params: Promise<{ id: strin
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
 
-  function applyDepartment(data: Department) {
+  const applyDepartment = useCallback((data: Department) => {
     setDepartment(data);
-    setActive((current) => current && data.modules.some((item) => item.resource === current) ? current : data.modules?.[0]?.resource || "");
-  }
+    setActive((current) => {
+      if (moduleParam && data.modules.some((item) => item.resource === moduleParam)) return moduleParam;
+      return current && data.modules.some((item) => item.resource === current) ? current : data.modules?.[0]?.resource || "";
+    });
+  }, [moduleParam]);
 
   useEffect(() => {
     const token = localStorage.getItem("factorypulse_token");
@@ -53,7 +59,7 @@ export default function DepartmentPage({ params }: { params: Promise<{ id: strin
     requestDepartment(id, token)
       .then((data) => applyDepartment(data))
       .catch((err) => setError(err instanceof Error ? err.message : "Department API failed"));
-  }, [id, router]);
+  }, [id, router, applyDepartment]);
 
   const activeModule = department?.modules.find((item) => item.resource === active);
   const rows = useMemo(() => {
