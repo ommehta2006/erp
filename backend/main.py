@@ -124,7 +124,7 @@ def _verify(authorization: str | None = Header(default=None)) -> str:
     return email
 
 def _employee_code(email: str, supplied: str | None = None) -> str:
-    return (supplied or email).strip().lower()
+    return email.strip().lower()
 
 def _today() -> str:
     return date.today().isoformat()
