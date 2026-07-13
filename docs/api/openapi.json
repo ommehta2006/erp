@@ -753,6 +753,131 @@
         "title": "HrEmployeeOnboardingRequest",
         "type": "object"
       },
+      "HrGeofenceRequest": {
+        "properties": {
+          "allowed_accuracy_meters": {
+            "default": 50,
+            "title": "Allowed Accuracy Meters",
+            "type": "number"
+          },
+          "approval_status": {
+            "default": "Approved",
+            "title": "Approval Status",
+            "type": "string"
+          },
+          "boundary_version": {
+            "default": "1",
+            "title": "Boundary Version",
+            "type": "string"
+          },
+          "center_latitude": {
+            "title": "Center Latitude",
+            "type": "number"
+          },
+          "center_longitude": {
+            "title": "Center Longitude",
+            "type": "number"
+          },
+          "effective_end_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective End Date"
+          },
+          "effective_start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Start Date"
+          },
+          "geofence_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geofence Id"
+          },
+          "geofence_type": {
+            "default": "Circular",
+            "title": "Geofence Type",
+            "type": "string"
+          },
+          "location_id": {
+            "title": "Location Id",
+            "type": "string"
+          },
+          "polygon_coordinates": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Polygon Coordinates"
+          },
+          "radius_meters": {
+            "default": 100,
+            "title": "Radius Meters",
+            "type": "number"
+          },
+          "status": {
+            "default": "Active",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "location_id",
+          "center_latitude",
+          "center_longitude"
+        ],
+        "title": "HrGeofenceRequest",
+        "type": "object"
+      },
+      "HrGeofenceTestRequest": {
+        "properties": {
+          "accuracy": {
+            "default": 10,
+            "title": "Accuracy",
+            "type": "number"
+          },
+          "latitude": {
+            "title": "Latitude",
+            "type": "number"
+          },
+          "location_id": {
+            "title": "Location Id",
+            "type": "string"
+          },
+          "longitude": {
+            "title": "Longitude",
+            "type": "number"
+          }
+        },
+        "required": [
+          "location_id",
+          "latitude",
+          "longitude"
+        ],
+        "title": "HrGeofenceTestRequest",
+        "type": "object"
+      },
       "HrLifecycleEventRequest": {
         "properties": {
           "approved_by": {
@@ -811,6 +936,165 @@
           "reason"
         ],
         "title": "HrLifecycleEventRequest",
+        "type": "object"
+      },
+      "HrLocationAssignmentRequest": {
+        "properties": {
+          "approval_status": {
+            "default": "Approved",
+            "title": "Approval Status",
+            "type": "string"
+          },
+          "assignment_type": {
+            "default": "Primary",
+            "title": "Assignment Type",
+            "type": "string"
+          },
+          "effective_end_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective End Date"
+          },
+          "effective_start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Start Date"
+          },
+          "employee_code": {
+            "title": "Employee Code",
+            "type": "string"
+          },
+          "location_id": {
+            "title": "Location Id",
+            "type": "string"
+          },
+          "shift": {
+            "default": "General",
+            "title": "Shift",
+            "type": "string"
+          },
+          "status": {
+            "default": "Active",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "employee_code",
+          "location_id"
+        ],
+        "title": "HrLocationAssignmentRequest",
+        "type": "object"
+      },
+      "HrWorkLocationRequest": {
+        "properties": {
+          "allowed_gps_accuracy_meters": {
+            "default": 50,
+            "title": "Allowed Gps Accuracy Meters",
+            "type": "number"
+          },
+          "approval_status": {
+            "default": "Approved",
+            "title": "Approval Status",
+            "type": "string"
+          },
+          "branch": {
+            "default": "Main",
+            "title": "Branch",
+            "type": "string"
+          },
+          "city": {
+            "title": "City",
+            "type": "string"
+          },
+          "company": {
+            "default": "FactoryPulse",
+            "title": "Company",
+            "type": "string"
+          },
+          "country": {
+            "default": "India",
+            "title": "Country",
+            "type": "string"
+          },
+          "full_address": {
+            "title": "Full Address",
+            "type": "string"
+          },
+          "geofence_radius_meters": {
+            "default": 100,
+            "title": "Geofence Radius Meters",
+            "type": "number"
+          },
+          "geofence_type": {
+            "default": "Circular",
+            "title": "Geofence Type",
+            "type": "string"
+          },
+          "latitude": {
+            "title": "Latitude",
+            "type": "number"
+          },
+          "location_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Id"
+          },
+          "location_name": {
+            "title": "Location Name",
+            "type": "string"
+          },
+          "location_type": {
+            "default": "Factory",
+            "title": "Location Type",
+            "type": "string"
+          },
+          "longitude": {
+            "title": "Longitude",
+            "type": "number"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "status": {
+            "default": "Active",
+            "title": "Status",
+            "type": "string"
+          },
+          "time_zone": {
+            "default": "Asia/Kolkata",
+            "title": "Time Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "location_name",
+          "full_address",
+          "city",
+          "state",
+          "latitude",
+          "longitude"
+        ],
+        "title": "HrWorkLocationRequest",
         "type": "object"
       },
       "LeaveAllocationRequest": {
@@ -3220,6 +3504,114 @@
         "summary": "V1 Hr Geofence Dashboard"
       }
     },
+    "/api/v1/hr/geofences": {
+      "post": {
+        "operationId": "v1_hr_create_geofence_api_v1_hr_geofences_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HrGeofenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Hr Create Geofence"
+      }
+    },
+    "/api/v1/hr/geofences/test": {
+      "post": {
+        "operationId": "v1_hr_test_geofence_api_v1_hr_geofences_test_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HrGeofenceTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Hr Test Geofence"
+      }
+    },
     "/api/v1/hr/holidays": {
       "post": {
         "operationId": "v1_hr_holiday_api_v1_hr_holidays_post",
@@ -3480,6 +3872,60 @@
         "summary": "V1 Hr Leave Decision"
       }
     },
+    "/api/v1/hr/location-assignments": {
+      "post": {
+        "operationId": "v1_hr_create_location_assignment_api_v1_hr_location_assignments_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HrLocationAssignmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Hr Create Location Assignment"
+      }
+    },
     "/api/v1/hr/overview": {
       "get": {
         "operationId": "v1_hr_overview_api_v1_hr_overview_get",
@@ -3522,6 +3968,60 @@
           }
         },
         "summary": "V1 Hr Overview"
+      }
+    },
+    "/api/v1/hr/work-locations": {
+      "post": {
+        "operationId": "v1_hr_create_work_location_api_v1_hr_work_locations_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HrWorkLocationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Hr Create Work Location"
       }
     },
     "/api/v1/payroll/generate": {

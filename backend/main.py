@@ -146,6 +146,56 @@ class LocationValidationRequest(BaseModel):
     app_version: str | None = None
     mock_location_indicator: str | None = None
 
+class HrWorkLocationRequest(BaseModel):
+    location_id: str | None = None
+    company: str = "FactoryPulse"
+    branch: str = "Main"
+    location_name: str
+    location_type: str = "Factory"
+    full_address: str
+    city: str
+    state: str
+    country: str = "India"
+    latitude: float
+    longitude: float
+    geofence_type: str = "Circular"
+    geofence_radius_meters: float = 100
+    allowed_gps_accuracy_meters: float = 50
+    time_zone: str = "Asia/Kolkata"
+    approval_status: str = "Approved"
+    status: str = "Active"
+
+class HrGeofenceRequest(BaseModel):
+    geofence_id: str | None = None
+    location_id: str
+    geofence_type: str = "Circular"
+    center_latitude: float
+    center_longitude: float
+    radius_meters: float = 100
+    polygon_coordinates: str | None = None
+    allowed_accuracy_meters: float = 50
+    boundary_version: str = "1"
+    effective_start_date: str | None = None
+    effective_end_date: str | None = None
+    approval_status: str = "Approved"
+    status: str = "Active"
+
+class HrGeofenceTestRequest(BaseModel):
+    location_id: str
+    latitude: float
+    longitude: float
+    accuracy: float = 10
+
+class HrLocationAssignmentRequest(BaseModel):
+    employee_code: str
+    location_id: str
+    shift: str = "General"
+    effective_start_date: str | None = None
+    effective_end_date: str | None = None
+    assignment_type: str = "Primary"
+    approval_status: str = "Approved"
+    status: str = "Active"
+
 class BiometricVerificationRequest(BaseModel):
     event_type: str = "day_in"
     attendance_record_id: str | None = None
@@ -512,6 +562,66 @@ def _geofence_validation(employee_code: str, payload: LocationValidationRequest)
         "can_continue": bool(inside and payload.accuracy <= allowed_accuracy),
     }
     return result
+
+def _validate_lat_lon(latitude: float, longitude: float):
+    if latitude < -90 or latitude > 90:
+        raise HTTPException(status_code=422, detail="latitude must be between -90 and 90.")
+    if longitude < -180 or longitude > 180:
+        raise HTTPException(status_code=422, detail="longitude must be between -180 and 180.")
+
+def _validate_geofence_numbers(radius: float, accuracy: float):
+    if radius < 10 or radius > 5000:
+        raise HTTPException(status_code=422, detail="geofence radius must be between 10 and 5000 meters.")
+    if accuracy < 1 or accuracy > 500:
+        raise HTTPException(status_code=422, detail="allowed GPS accuracy must be between 1 and 500 meters.")
+
+def _validate_polygon_payload(geofence_type: str, polygon_coordinates: str | None):
+    if "polygon" not in geofence_type.lower():
+        return
+    points = _json_points(polygon_coordinates)
+    if len(points) < 3:
+        raise HTTPException(status_code=422, detail="polygon geofence requires at least three valid coordinate points.")
+
+def _test_geofence(location_id: str, latitude: float, longitude: float, accuracy: float):
+    _validate_lat_lon(latitude, longitude)
+    location = _active_record(_records_by_field("work_locations", "location_id", location_id))
+    if not location:
+        raise HTTPException(status_code=404, detail="Work location not found.")
+    geofence = _geofence_for_location(location_id)
+    if not geofence:
+        raise HTTPException(status_code=404, detail="Active geofence not found for this location.")
+    location_data = location.get("data", {})
+    geofence_data = geofence.get("data", {})
+    center_lat = _float_value(geofence_data, "center_latitude") or _float_value(location_data, "latitude")
+    center_lon = _float_value(geofence_data, "center_longitude") or _float_value(location_data, "longitude")
+    radius = _float_value(geofence_data, "radius_meters") or _float_value(location_data, "geofence_radius_meters", 100)
+    allowed_accuracy = _float_value(geofence_data, "allowed_accuracy_meters") or _float_value(location_data, "allowed_gps_accuracy_meters", 50)
+    geofence_type = (geofence_data.get("geofence_type") or location_data.get("geofence_type") or "Circular").lower()
+    distance = _haversine_meters(latitude, longitude, center_lat, center_lon)
+    if "polygon" in geofence_type:
+        inside = _point_in_polygon(latitude, longitude, _json_points(geofence_data.get("polygon_coordinates")))
+    else:
+        inside = distance <= radius
+    accuracy_ok = accuracy <= allowed_accuracy
+    return {
+        "location_id": location_id,
+        "location_name": location_data.get("location_name", ""),
+        "geofence_id": geofence_data.get("geofence_id", ""),
+        "geofence_type": geofence_data.get("geofence_type", "Circular"),
+        "latitude": f"{latitude:.8f}",
+        "longitude": f"{longitude:.8f}",
+        "center_latitude": f"{center_lat:.8f}",
+        "center_longitude": f"{center_lon:.8f}",
+        "distance_meters": f"{distance:.2f}",
+        "radius_meters": f"{radius:.2f}",
+        "accuracy_meters": f"{accuracy:.2f}",
+        "allowed_accuracy_meters": f"{allowed_accuracy:.2f}",
+        "inside_fence": "Yes" if inside else "No",
+        "accuracy_ok": "Yes" if accuracy_ok else "No",
+        "geofence_status": "Inside Fence" if inside and accuracy_ok else ("Accuracy Rejected" if not accuracy_ok else "Outside Fence"),
+        "validation_reason": "Coordinate can be used for attendance." if inside and accuracy_ok else "Coordinate requires review or must be rejected by attendance policy.",
+        "server_validated_at": _now_iso(),
+    }
 
 def _write_audit(actor: str, action: str, entity_type: str, entity_id: str, new_values: dict[str, Any], reason: str = ""):
     try:
@@ -2231,17 +2341,125 @@ def v1_hr_attendance_correction_decision(payload: AttendanceCorrectionDecisionRe
 def v1_hr_geofence_dashboard(email: str = Depends(_verify)):
     _require_permission(email, "hr:read")
     overview = _hr_overview()
+    work_locations = _items("work_locations", 200)
+    geofences = _items("geofences", 200)
+    assignments = _items("employee_location_assignments", 500)
+    validation_results = _items("attendance_validation_results", 200)
     return {
         "stats": {
             "work_locations": overview["stats"]["work_locations"],
             "geofences": overview["stats"]["geofences"],
             "assignments": overview["stats"]["location_assignments"],
             "out_of_fence_attempts": overview["stats"]["out_of_fence_attempts"],
+            "active_locations": len([item for item in work_locations if item.get("status") == "Active"]),
+            "pending_approval": len([item for item in [*work_locations, *geofences] if item.get("data", {}).get("approval_status") == "Pending"]),
+            "failed_validations": len([item for item in validation_results if item.get("status") == "Failed"]),
         },
-        "validation_results": _items("attendance_validation_results", 100),
-        "work_locations": _items("work_locations", 100),
-        "geofences": _items("geofences", 100),
+        "validation_results": validation_results,
+        "work_locations": work_locations,
+        "geofences": geofences,
+        "assignments": assignments,
     }
+
+@app.post("/api/v1/hr/work-locations")
+def v1_hr_create_work_location(payload: HrWorkLocationRequest, email: str = Depends(_verify)):
+    _require_permission(email, "hr:write")
+    _validate_lat_lon(payload.latitude, payload.longitude)
+    _validate_geofence_numbers(payload.geofence_radius_meters, payload.allowed_gps_accuracy_meters)
+    if not payload.location_name.strip() or not payload.full_address.strip():
+        raise HTTPException(status_code=422, detail="location_name and full_address are required.")
+    location_id = (payload.location_id or _new_ref("LOCN")).strip()
+    if _records_by_field("work_locations", "location_id", location_id, 1):
+        raise HTTPException(status_code=409, detail="location_id already exists.")
+    item = storage.create_record("work_locations", {
+        "location_id": location_id,
+        "company": payload.company.strip(),
+        "branch": payload.branch.strip(),
+        "location_name": payload.location_name.strip(),
+        "location_type": payload.location_type.strip(),
+        "full_address": payload.full_address.strip(),
+        "city": payload.city.strip(),
+        "state": payload.state.strip(),
+        "country": payload.country.strip(),
+        "latitude": f"{payload.latitude:.8f}",
+        "longitude": f"{payload.longitude:.8f}",
+        "geofence_type": payload.geofence_type.strip(),
+        "geofence_radius_meters": f"{payload.geofence_radius_meters:.2f}",
+        "allowed_gps_accuracy_meters": f"{payload.allowed_gps_accuracy_meters:.2f}",
+        "time_zone": payload.time_zone.strip(),
+        "approval_status": payload.approval_status.strip(),
+        "status": payload.status.strip() or "Active",
+    })
+    _write_audit(email, "create_work_location", "work_locations", location_id, item.get("data", {}), "HR work location created.")
+    return {"item": item, "dashboard": v1_hr_geofence_dashboard(email)}
+
+@app.post("/api/v1/hr/geofences")
+def v1_hr_create_geofence(payload: HrGeofenceRequest, email: str = Depends(_verify)):
+    _require_permission(email, "hr:write")
+    _validate_lat_lon(payload.center_latitude, payload.center_longitude)
+    _validate_geofence_numbers(payload.radius_meters, payload.allowed_accuracy_meters)
+    _validate_polygon_payload(payload.geofence_type, payload.polygon_coordinates)
+    location = _active_record(_records_by_field("work_locations", "location_id", payload.location_id))
+    if not location:
+        raise HTTPException(status_code=404, detail="Work location not found.")
+    geofence_id = (payload.geofence_id or _new_ref("GEO")).strip()
+    if _records_by_field("geofences", "geofence_id", geofence_id, 1):
+        raise HTTPException(status_code=409, detail="geofence_id already exists.")
+    item = storage.create_record("geofences", {
+        "geofence_id": geofence_id,
+        "location_id": payload.location_id.strip(),
+        "geofence_type": payload.geofence_type.strip(),
+        "center_latitude": f"{payload.center_latitude:.8f}",
+        "center_longitude": f"{payload.center_longitude:.8f}",
+        "radius_meters": f"{payload.radius_meters:.2f}",
+        "polygon_coordinates": payload.polygon_coordinates or "",
+        "allowed_accuracy_meters": f"{payload.allowed_accuracy_meters:.2f}",
+        "boundary_version": payload.boundary_version.strip() or "1",
+        "effective_start_date": _clean_text(payload.effective_start_date),
+        "effective_end_date": _clean_text(payload.effective_end_date),
+        "approval_status": payload.approval_status.strip(),
+        "status": payload.status.strip() or "Active",
+    })
+    version = storage.create_record("geofence_versions", {
+        "version_id": _new_ref("GEOV"),
+        "geofence_id": geofence_id,
+        "boundary_version": payload.boundary_version.strip() or "1",
+        "change_summary": "Initial geofence boundary created.",
+        "changed_by": email,
+        "approved_by": email if payload.approval_status.strip() == "Approved" else "",
+        "effective_date": payload.effective_start_date or _today(),
+        "status": payload.status.strip() or "Active",
+    })
+    _write_audit(email, "create_geofence", "geofences", geofence_id, {"geofence": item.get("data", {}), "version": version.get("data", {})}, "HR geofence created.")
+    return {"item": item, "version": version, "dashboard": v1_hr_geofence_dashboard(email)}
+
+@app.post("/api/v1/hr/geofences/test")
+def v1_hr_test_geofence(payload: HrGeofenceTestRequest, email: str = Depends(_verify)):
+    _require_permission(email, "hr:read")
+    result = _test_geofence(payload.location_id.strip(), payload.latitude, payload.longitude, payload.accuracy)
+    _write_audit(email, "test_geofence_coordinate", "geofences", result["geofence_id"], result, "HR tested coordinate against geofence.")
+    return result
+
+@app.post("/api/v1/hr/location-assignments")
+def v1_hr_create_location_assignment(payload: HrLocationAssignmentRequest, email: str = Depends(_verify)):
+    _require_permission(email, "hr:write")
+    if not payload.employee_code.strip() or not payload.location_id.strip():
+        raise HTTPException(status_code=422, detail="employee_code and location_id are required.")
+    if not _active_record(_records_by_field("work_locations", "location_id", payload.location_id)):
+        raise HTTPException(status_code=404, detail="Work location not found.")
+    item = storage.create_record("employee_location_assignments", {
+        "assignment_id": _new_ref("LASSIGN"),
+        "employee_code": payload.employee_code.strip(),
+        "location_id": payload.location_id.strip(),
+        "shift": payload.shift.strip() or "General",
+        "effective_start_date": _clean_text(payload.effective_start_date),
+        "effective_end_date": _clean_text(payload.effective_end_date),
+        "assignment_type": payload.assignment_type.strip() or "Primary",
+        "approval_status": payload.approval_status.strip() or "Approved",
+        "status": payload.status.strip() or "Active",
+    })
+    _write_audit(email, "assign_employee_location", "employee_location_assignments", item.get("id", ""), item.get("data", {}), "HR assigned employee work location.")
+    return {"item": item, "dashboard": v1_hr_geofence_dashboard(email)}
 
 @app.get("/api/v1/finance/payroll-dashboard")
 def v1_finance_payroll_dashboard(email: str = Depends(_verify)):
