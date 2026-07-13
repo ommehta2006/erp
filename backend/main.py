@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -101,6 +101,18 @@ class AttendanceCorrectionRequest(BaseModel):
     requested_day_out_time: str | None = None
     reason: str
     requested_changes: str | None = None
+
+class AttendanceDecisionRequest(BaseModel):
+    attendance_record_id: str
+    decision: str
+    comments: str | None = None
+    approval_type: str = "HR Review"
+
+class AttendanceCorrectionDecisionRequest(BaseModel):
+    request_id: str
+    decision: str
+    comments: str | None = None
+    apply_to_attendance: bool = True
 
 class LocationValidationRequest(BaseModel):
     event_type: str = "day_in"
@@ -890,6 +902,197 @@ def _create_leave_application(payload: LeaveApplicationRequest, actor: str, empl
     _write_audit(actor, "apply_leave", "leave_applications", app_id, item.get("data", {}), payload.reason)
     return item
 
+def _record_key(item: dict[str, Any], id_field: str):
+    data = item.get("data", {})
+    return data.get(id_field) or item.get("id") or ""
+
+def _find_record(resource: str, identifier: str, id_field: str, limit: int = 1000):
+    needle = identifier.strip().lower()
+    return next(
+        (
+            item for item in _items(resource, limit)
+            if str(item.get("id", "")).lower() == needle
+            or str(item.get("data", {}).get(id_field, "")).lower() == needle
+        ),
+        None,
+    )
+
+def _minutes_between(start_value: str | None, end_value: str | None) -> int:
+    if not start_value or not end_value:
+        return 0
+    try:
+        start = datetime.strptime(start_value[:5], "%H:%M")
+        end = datetime.strptime(end_value[:5], "%H:%M")
+        if end < start:
+            end += timedelta(days=1)
+        return int((end - start).total_seconds() // 60)
+    except ValueError:
+        return 0
+
+def _attendance_row_summary(item: dict[str, Any]):
+    data = item.get("data", {})
+    record_id = data.get("attendance_record_id") or item.get("id")
+    employee_code = data.get("employee_code", "")
+    location_events = [
+        event for event in _records_for_employee("attendance_location_events", employee_code, 1000)
+        if event.get("data", {}).get("attendance_record_id") in {record_id, "pending"}
+    ]
+    biometric_events = [
+        event for event in _records_for_employee("attendance_biometric_events", employee_code, 1000)
+        if event.get("data", {}).get("attendance_record_id") in {record_id, "pending"}
+    ]
+    approvals = [
+        approval for approval in _records_for_employee("attendance_approvals", employee_code, 500)
+        if approval.get("data", {}).get("attendance_record_id") == record_id
+    ]
+    geofence_status = data.get("day_out_geofence_status") or data.get("day_in_geofence_status") or "Location Not Verified"
+    missing_day_out = bool(data.get("day_in_time") and not data.get("day_out_time"))
+    latest_biometric = biometric_events[0].get("data", {}) if biometric_events else {}
+    return {
+        "id": item.get("id"),
+        "attendance_record_id": record_id,
+        "employee_code": employee_code,
+        "employee_name": data.get("employee_name") or employee_code,
+        "department": data.get("department", ""),
+        "designation": data.get("designation", ""),
+        "attendance_date": data.get("attendance_date", ""),
+        "shift": data.get("shift", ""),
+        "day_in_time": data.get("day_in_time", ""),
+        "day_out_time": data.get("day_out_time", ""),
+        "gross_work_minutes": data.get("gross_work_minutes") or str(_minutes_between(data.get("day_in_time"), data.get("day_out_time"))),
+        "late_duration_minutes": data.get("late_duration_minutes", ""),
+        "early_exit_minutes": data.get("early_exit_minutes", ""),
+        "attendance_status": data.get("attendance_status") or item.get("status") or "Open",
+        "approval_status": data.get("approval_status") or item.get("status") or "Open",
+        "geofence_status": geofence_status,
+        "biometric_status": latest_biometric.get("verification_result") or data.get("day_in_biometric_result") or "Pending",
+        "missing_day_out": missing_day_out,
+        "evidence": {
+            "location_events": len(location_events),
+            "biometric_events": len(biometric_events),
+            "approvals": len(approvals),
+            "latest_location": location_events[0].get("data", {}) if location_events else None,
+            "latest_biometric": latest_biometric or None,
+        },
+        "raw": data,
+    }
+
+def _attendance_dashboard():
+    records = [_attendance_row_summary(item) for item in _items("attendance_records", 1000)]
+    validation_results = _items("attendance_validation_results", 1000)
+    correction_requests = _items("attendance_correction_requests", 1000)
+    approvals = _items("attendance_approvals", 1000)
+    out_of_fence = [
+        item for item in records
+        if item["geofence_status"] in {"Outside Fence", "Boundary Tolerance Applied", "Accuracy Rejected", "Geofence Not Assigned", "Out of Fence"}
+    ]
+    missing_day_out = [item for item in records if item["missing_day_out"]]
+    pending_records = [item for item in records if item["approval_status"] in {"Open", "Pending", "Pending Approval", "Draft"}]
+    pending_corrections = [
+        item for item in correction_requests
+        if item.get("status") in {"Open", "Pending", "Pending Approval", "Draft"}
+        or item.get("data", {}).get("final_status") in {"Open", "Pending", "Pending Approval", ""}
+    ]
+    failed_biometrics = [
+        item for item in _items("attendance_biometric_events", 1000)
+        if item.get("status") == "Failed" or item.get("data", {}).get("verification_result") in {"failed", "locked", "unavailable"}
+    ]
+    return {
+        "stats": {
+            "attendance_records": len(records),
+            "pending_records": len(pending_records),
+            "out_of_fence": len(out_of_fence),
+            "missing_day_out": len(missing_day_out),
+            "correction_requests": len(correction_requests),
+            "pending_corrections": len(pending_corrections),
+            "failed_biometrics": len(failed_biometrics),
+            "validation_results": len(validation_results),
+            "approvals": len(approvals),
+        },
+        "records": records[:200],
+        "out_of_fence": out_of_fence[:100],
+        "missing_day_out": missing_day_out[:100],
+        "correction_requests": correction_requests[:100],
+        "pending_corrections": pending_corrections[:100],
+        "validation_results": validation_results[:100],
+        "failed_biometrics": failed_biometrics[:100],
+    }
+
+def _attendance_csv(rows: list[dict[str, Any]]):
+    headers = [
+        "attendance_record_id", "employee_code", "employee_name", "attendance_date", "shift",
+        "day_in_time", "day_out_time", "gross_work_minutes", "attendance_status",
+        "approval_status", "geofence_status", "biometric_status",
+    ]
+    lines = [",".join(headers)]
+    for row in rows:
+        values = []
+        for header in headers:
+            value = str(row.get(header, "")).replace('"', '""')
+            values.append(f'"{value}"')
+        lines.append(",".join(values))
+    return "\n".join(lines) + "\n"
+
+def _apply_attendance_correction(request: dict[str, Any], actor: str, comments: str):
+    data = request.get("data", {})
+    employee_code = data.get("employee_code", "")
+    attendance_date = data.get("attendance_date", "")
+    record = next(
+        (
+            item for item in _records_for_employee("attendance_records", employee_code, 1000)
+            if item.get("data", {}).get("attendance_date") == attendance_date
+        ),
+        None,
+    )
+    update_payload = {
+        "approval_status": "Approved",
+        "attendance_status": "Attendance Corrected",
+        "hr_remarks": comments or data.get("reason", "Attendance corrected by HR"),
+        "status": "Attendance Corrected",
+    }
+    if data.get("requested_day_in_time"):
+        update_payload["day_in_time"] = data.get("requested_day_in_time")
+    if data.get("requested_day_out_time"):
+        update_payload["day_out_time"] = data.get("requested_day_out_time")
+    if update_payload.get("day_in_time") and update_payload.get("day_out_time"):
+        minutes = _minutes_between(update_payload.get("day_in_time"), update_payload.get("day_out_time"))
+        update_payload["gross_work_minutes"] = str(minutes)
+        update_payload["net_work_minutes"] = str(minutes)
+    if record:
+        updated = storage.update_record("attendance_records", record.get("id", ""), update_payload)
+    else:
+        employee = _active_record(_records_for_employee("employees", employee_code, 20))
+        employee_data = employee.get("data", {}) if employee else {}
+        updated = storage.create_record("attendance_records", {
+            "attendance_record_id": _new_ref("ATT"),
+            "employee_code": employee_code,
+            "employee_name": employee_data.get("full_name", employee_code),
+            "department": employee_data.get("department", ""),
+            "designation": employee_data.get("role", ""),
+            "company": "",
+            "branch": "",
+            "work_location": "",
+            "shift": employee_data.get("shift", ""),
+            "attendance_date": attendance_date,
+            "day_in_time": data.get("requested_day_in_time", ""),
+            "day_out_time": data.get("requested_day_out_time", ""),
+            "day_in_geofence_status": "Manual Override",
+            "day_out_geofence_status": "Manual Override",
+            "day_in_biometric_result": "Manual Correction",
+            "day_out_biometric_result": "Manual Correction",
+            "gross_work_minutes": str(_minutes_between(data.get("requested_day_in_time"), data.get("requested_day_out_time"))),
+            "net_work_minutes": str(_minutes_between(data.get("requested_day_in_time"), data.get("requested_day_out_time"))),
+            "attendance_status": "Attendance Corrected",
+            "payroll_status": "Pending",
+            "approval_status": "Approved",
+            "employee_remarks": data.get("reason", ""),
+            "hr_remarks": comments,
+            "source": "hr_correction",
+            "status": "Attendance Corrected",
+        })
+    _write_audit(actor, "apply_attendance_correction", "attendance_records", updated.get("id", ""), updated.get("data", {}), comments)
+    return updated
+
 def _payroll_employee_codes(assignments: list[dict[str, Any]], employees: list[dict[str, Any]]):
     codes = []
     for row in assignments:
@@ -1547,6 +1750,81 @@ def v1_hr_holiday(payload: HolidayRequest, email: str = Depends(_verify)):
     })
     _write_audit(email, "create_holiday", "holidays", item.get("id", ""), item.get("data", {}), "HR holiday creation")
     return {"item": item, "dashboard": _leave_dashboard()}
+
+@app.get("/api/v1/hr/attendance-dashboard")
+def v1_hr_attendance_dashboard(_: str = Depends(_verify)):
+    return _attendance_dashboard()
+
+@app.get("/api/v1/hr/attendance/export")
+def v1_hr_attendance_export(_: str = Depends(_verify)):
+    csv = _attendance_csv(_attendance_dashboard()["records"])
+    return Response(
+        content=csv,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=attendance-report.csv"},
+    )
+
+@app.post("/api/v1/hr/attendance/decision")
+def v1_hr_attendance_decision(payload: AttendanceDecisionRequest, email: str = Depends(_verify)):
+    decision = payload.decision.strip().title()
+    if decision not in {"Approved", "Rejected", "Pending Approval"}:
+        raise HTTPException(status_code=422, detail="decision must be Approved, Rejected, or Pending Approval.")
+    record = _find_record("attendance_records", payload.attendance_record_id, "attendance_record_id")
+    if not record:
+        raise HTTPException(status_code=404, detail="Attendance record not found.")
+    record_no = record.get("data", {}).get("attendance_record_id") or record.get("id", "")
+    approval = storage.create_record("attendance_approvals", {
+        "approval_id": _new_ref("AAPR"),
+        "attendance_record_id": record_no,
+        "employee_code": record.get("data", {}).get("employee_code", ""),
+        "approval_type": payload.approval_type.strip() or "HR Review",
+        "approver": email,
+        "decision": decision,
+        "comments": _clean_text(payload.comments),
+        "decided_at": _now_iso(),
+        "status": decision,
+    })
+    update_payload = {
+        "approval_status": decision,
+        "hr_remarks": _clean_text(payload.comments),
+        "status": decision,
+    }
+    if decision == "Rejected":
+        update_payload["attendance_status"] = "Rejected"
+    updated = storage.update_record("attendance_records", record.get("id", ""), update_payload)
+    _write_audit(email, "attendance_decision", "attendance_records", record_no, {"decision": decision, "comments": payload.comments or ""}, "HR attendance decision")
+    return {"approval": approval, "attendance": _attendance_row_summary(updated), "dashboard": _attendance_dashboard()}
+
+@app.post("/api/v1/hr/attendance/correction-decision")
+def v1_hr_attendance_correction_decision(payload: AttendanceCorrectionDecisionRequest, email: str = Depends(_verify)):
+    decision = payload.decision.strip().title()
+    if decision not in {"Approved", "Rejected"}:
+        raise HTTPException(status_code=422, detail="decision must be Approved or Rejected.")
+    request = _find_record("attendance_correction_requests", payload.request_id, "request_id")
+    if not request:
+        raise HTTPException(status_code=404, detail="Attendance correction request not found.")
+    request_no = request.get("data", {}).get("request_id") or request.get("id", "")
+    updated_request = storage.update_record("attendance_correction_requests", request.get("id", ""), {
+        "hr_approval": decision,
+        "final_status": decision,
+        "status": decision,
+    })
+    corrected = None
+    if decision == "Approved" and payload.apply_to_attendance:
+        corrected = _apply_attendance_correction(updated_request, email, payload.comments or "Approved attendance correction")
+    approval = storage.create_record("attendance_approvals", {
+        "approval_id": _new_ref("AAPR"),
+        "attendance_record_id": corrected.get("data", {}).get("attendance_record_id", request_no) if corrected else request_no,
+        "employee_code": request.get("data", {}).get("employee_code", ""),
+        "approval_type": "Correction Request",
+        "approver": email,
+        "decision": decision,
+        "comments": _clean_text(payload.comments),
+        "decided_at": _now_iso(),
+        "status": decision,
+    })
+    _write_audit(email, "attendance_correction_decision", "attendance_correction_requests", request_no, {"decision": decision, "comments": payload.comments or ""}, "HR attendance correction decision")
+    return {"approval": approval, "request": updated_request, "corrected_attendance": corrected, "dashboard": _attendance_dashboard()}
 
 @app.get("/api/v1/hr/geofence-dashboard")
 def v1_hr_geofence_dashboard(_: str = Depends(_verify)):

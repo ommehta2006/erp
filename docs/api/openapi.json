@@ -1,6 +1,40 @@
 {
   "components": {
     "schemas": {
+      "AttendanceCorrectionDecisionRequest": {
+        "properties": {
+          "apply_to_attendance": {
+            "default": true,
+            "title": "Apply To Attendance",
+            "type": "boolean"
+          },
+          "comments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "decision"
+        ],
+        "title": "AttendanceCorrectionDecisionRequest",
+        "type": "object"
+      },
       "AttendanceCorrectionRequest": {
         "properties": {
           "attendance_date": {
@@ -50,6 +84,40 @@
           "reason"
         ],
         "title": "AttendanceCorrectionRequest",
+        "type": "object"
+      },
+      "AttendanceDecisionRequest": {
+        "properties": {
+          "approval_type": {
+            "default": "HR Review",
+            "title": "Approval Type",
+            "type": "string"
+          },
+          "attendance_record_id": {
+            "title": "Attendance Record Id",
+            "type": "string"
+          },
+          "comments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comments"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attendance_record_id",
+          "decision"
+        ],
+        "title": "AttendanceDecisionRequest",
         "type": "object"
       },
       "BiometricVerificationRequest": {
@@ -2563,6 +2631,202 @@
           }
         },
         "summary": "V1 Finance Payroll Dashboard"
+      }
+    },
+    "/api/v1/hr/attendance-dashboard": {
+      "get": {
+        "operationId": "v1_hr_attendance_dashboard_api_v1_hr_attendance_dashboard_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Hr Attendance Dashboard"
+      }
+    },
+    "/api/v1/hr/attendance/correction-decision": {
+      "post": {
+        "operationId": "v1_hr_attendance_correction_decision_api_v1_hr_attendance_correction_decision_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttendanceCorrectionDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Hr Attendance Correction Decision"
+      }
+    },
+    "/api/v1/hr/attendance/decision": {
+      "post": {
+        "operationId": "v1_hr_attendance_decision_api_v1_hr_attendance_decision_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttendanceDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Hr Attendance Decision"
+      }
+    },
+    "/api/v1/hr/attendance/export": {
+      "get": {
+        "operationId": "v1_hr_attendance_export_api_v1_hr_attendance_export_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Hr Attendance Export"
       }
     },
     "/api/v1/hr/employees-dashboard": {

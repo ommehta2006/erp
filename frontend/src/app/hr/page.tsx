@@ -16,6 +16,7 @@ type HrOverview = {
 
 const CORE_ACTIONS = [
   { title: "Onboard Employee", body: "Create employee master, private details, salary, location, device, biometric metadata, and lifecycle records.", href: "/hr/employees" },
+  { title: "Review Attendance", body: "Approve records, review geofence evidence, correct missing punches, and export attendance.", href: "/hr/attendance" },
   { title: "Manage Leave & Holidays", body: "Approve leave, allocate balances, create paid holidays, and protect payroll impact.", href: "/hr/leave" },
   { title: "Create Work Location", body: "Factory, warehouse, site, office, remote, and temporary approved locations.", href: "/departments/hr?module=work_locations" },
   { title: "Configure Geofence", body: "Circular or polygon boundaries with GPS accuracy, approval status, and versions.", href: "/departments/hr?module=geofences" },
@@ -82,6 +83,7 @@ export default function HrPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Link href="/hr/employees" className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-700 hover:border-teal-600">Employee Master</Link>
+            <Link href="/hr/attendance" className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 hover:border-indigo-600">Attendance</Link>
             <Link href="/hr/leave" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 hover:border-amber-600">Leave & Holidays</Link>
             <Link href="/departments/hr" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:border-teal-600">Full HR Modules</Link>
             <Link href="/finance" className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-700 hover:border-sky-600">Finance Payroll</Link>
