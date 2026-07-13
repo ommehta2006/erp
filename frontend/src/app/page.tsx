@@ -78,6 +78,7 @@ const DEPARTMENT_STYLES = [
 const QUICK_LINKS = [
   { label: "HR Command", href: "/hr", style: "border-teal-200 bg-teal-50 text-teal-800 hover:border-teal-500" },
   { label: "Finance Payroll", href: "/finance", style: "border-sky-200 bg-sky-50 text-sky-800 hover:border-sky-500" },
+  { label: "Reports", href: "/reports", style: "border-indigo-200 bg-indigo-50 text-indigo-800 hover:border-indigo-500" },
   { label: "Employee App", href: "/mobile", style: "border-amber-200 bg-amber-50 text-amber-800 hover:border-amber-500" },
 ];
 

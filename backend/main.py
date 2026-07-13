@@ -945,7 +945,15 @@ def _attendance_row_summary(item: dict[str, Any]):
         approval for approval in _records_for_employee("attendance_approvals", employee_code, 500)
         if approval.get("data", {}).get("attendance_record_id") == record_id
     ]
-    geofence_status = data.get("day_out_geofence_status") or data.get("day_in_geofence_status") or "Location Not Verified"
+    day_in_fence = data.get("day_in_geofence_status", "")
+    day_out_fence = data.get("day_out_geofence_status", "")
+    exception_fences = {"Outside Fence", "Out of Fence", "Accuracy Rejected", "Geofence Not Assigned"}
+    if day_in_fence in exception_fences:
+        geofence_status = day_in_fence
+    elif day_out_fence in exception_fences:
+        geofence_status = day_out_fence
+    else:
+        geofence_status = day_out_fence or day_in_fence or "Location Not Verified"
     missing_day_out = bool(data.get("day_in_time") and not data.get("day_out_time"))
     latest_biometric = biometric_events[0].get("data", {}) if biometric_events else {}
     return {
@@ -1032,6 +1040,190 @@ def _attendance_csv(rows: list[dict[str, Any]]):
             values.append(f'"{value}"')
         lines.append(",".join(values))
     return "\n".join(lines) + "\n"
+
+def _csv_from_rows(rows: list[dict[str, Any]], preferred_headers: list[str] | None = None):
+    headers = preferred_headers or []
+    seen = set(headers)
+    for row in rows:
+        for key in row:
+            if key not in seen and not isinstance(row.get(key), (dict, list)):
+                headers.append(key)
+                seen.add(key)
+    if not headers:
+        headers = ["message"]
+        rows = [{"message": "No data"}]
+    lines = [",".join(headers)]
+    for row in rows:
+        values = []
+        for header in headers:
+            value = str(row.get(header, "")).replace('"', '""')
+            values.append(f'"{value}"')
+        lines.append(",".join(values))
+    return "\n".join(lines) + "\n"
+
+def _group_count(rows: list[dict[str, Any]], key: str):
+    grouped: dict[str, int] = {}
+    for row in rows:
+        label = str(row.get(key) or "Unassigned")
+        grouped[label] = grouped.get(label, 0) + 1
+    return [{"label": label, "count": count} for label, count in sorted(grouped.items())]
+
+def _report_rows(report_id: str):
+    report_id = report_id.strip().lower()
+    attendance = [_attendance_row_summary(item) for item in _items("attendance_records", 1000)]
+    leave_dashboard = _leave_dashboard()
+    payroll_results = [item.get("data", {}) for item in _items("payroll_employee_results", 1000)]
+    payroll_runs = [item.get("data", {}) for item in _items("payroll_runs", 500)]
+    adjustments = [item.get("data", {}) for item in _items("payroll_adjustments", 1000)]
+    lifecycle = [item.get("data", {}) for item in _items("employee_lifecycle_events", 1000)]
+    validation_results = [item.get("data", {}) for item in _items("attendance_validation_results", 1000)]
+    employees = [item.get("data", {}) for item in _items("employees", 1000)]
+
+    if report_id == "daily_attendance":
+        return attendance
+    if report_id == "department_attendance":
+        return [
+            {
+                "department": item["label"],
+                "records": item["count"],
+                "present": len([row for row in attendance if (row.get("department") or "Unassigned") == item["label"] and row.get("attendance_status") in {"Present", "Approved", "Attendance Corrected"}]),
+                "out_of_fence": len([row for row in attendance if (row.get("department") or "Unassigned") == item["label"] and row.get("geofence_status") in {"Outside Fence", "Out of Fence", "Accuracy Rejected"}]),
+            }
+            for item in _group_count(attendance, "department")
+        ]
+    if report_id == "late_arrivals":
+        return [
+            row for row in attendance
+            if _money(row.get("late_duration_minutes")) > 0 or row.get("attendance_status") == "Late"
+        ]
+    if report_id == "missing_day_out":
+        return [row for row in attendance if row.get("missing_day_out")]
+    if report_id == "out_of_fence":
+        return [
+            row for row in attendance
+            if row.get("geofence_status") in {"Outside Fence", "Out of Fence", "Accuracy Rejected", "Geofence Not Assigned"}
+        ]
+    if report_id == "biometric_failures":
+        return [
+            item.get("data", {}) for item in _items("attendance_biometric_events", 1000)
+            if item.get("status") == "Failed" or item.get("data", {}).get("verification_result") in {"failed", "locked", "unavailable"}
+        ]
+    if report_id == "leave_usage":
+        return leave_dashboard["balances"]
+    if report_id == "holiday_impact":
+        return leave_dashboard["holidays"]
+    if report_id == "payroll_summary":
+        return [
+            {
+                "run_no": row.get("run_no"),
+                "period": row.get("period"),
+                "department": row.get("department"),
+                "gross_pay": row.get("gross_pay"),
+                "deductions": row.get("deductions"),
+                "net_pay": row.get("net_pay"),
+                "approval_status": row.get("approval_status"),
+                "status": row.get("status"),
+            }
+            for row in payroll_runs
+        ] or [
+            {
+                "employee_code": row.get("employee_code"),
+                "payroll_run": row.get("payroll_run"),
+                "paid_days": row.get("paid_days"),
+                "gross_pay": row.get("gross_pay"),
+                "deductions": row.get("deductions"),
+                "net_pay": row.get("net_pay"),
+                "status": row.get("status"),
+            }
+            for row in payroll_results
+        ]
+    if report_id == "payroll_variance":
+        by_employee: dict[str, list[dict[str, Any]]] = {}
+        for row in payroll_results:
+            by_employee.setdefault(row.get("employee_code", ""), []).append(row)
+        return [
+            {
+                "employee_code": employee_code,
+                "result_count": len(rows),
+                "latest_net_pay": rows[0].get("net_pay", "0"),
+                "lowest_net_pay": min(_money(row.get("net_pay")) for row in rows),
+                "highest_net_pay": max(_money(row.get("net_pay")) for row in rows),
+                "variance": round(max(_money(row.get("net_pay")) for row in rows) - min(_money(row.get("net_pay")) for row in rows), 2),
+            }
+            for employee_code, rows in by_employee.items()
+        ]
+    if report_id == "salary_adjustments":
+        return adjustments
+    if report_id == "salary_increment_history":
+        return [item.get("data", {}) for item in _items("salary_revision_history", 1000)]
+    if report_id == "employee_lifecycle":
+        return lifecycle
+    if report_id == "geofence_compliance":
+        return [
+            {
+                "validation_id": row.get("validation_id"),
+                "employee_code": row.get("employee_code"),
+                "event_type": row.get("event_type"),
+                "location_id": row.get("location_id"),
+                "distance_meters": row.get("distance_meters"),
+                "inside_fence": row.get("inside_fence"),
+                "accuracy_meters": row.get("accuracy_meters"),
+                "geofence_status": row.get("geofence_status"),
+                "validation_reason": row.get("validation_reason"),
+                "server_validated_at": row.get("server_validated_at"),
+                "status": row.get("status"),
+            }
+            for row in validation_results
+        ]
+    if report_id == "employee_turnover":
+        exit_events = [row for row in lifecycle if row.get("event_type", "").lower() in {"resignation", "termination", "exit clearance", "final settlement"}]
+        join_events = [row for row in lifecycle if row.get("event_type", "").lower() in {"employee joined", "offer accepted", "rehire"}]
+        return [
+            {"metric": "active_employees", "count": len([row for row in employees if row.get("status") == "Active"])},
+            {"metric": "join_events", "count": len(join_events)},
+            {"metric": "exit_events", "count": len(exit_events)},
+            {"metric": "turnover_percent", "count": round((len(exit_events) / max(len(employees), 1)) * 100, 2)},
+        ]
+    raise HTTPException(status_code=404, detail="Report not found")
+
+def _report_catalog():
+    return [
+        {"id": "daily_attendance", "title": "Daily Attendance", "domain": "Attendance", "description": "Employee day-in/day-out, approval, geofence, and biometric status."},
+        {"id": "department_attendance", "title": "Department Attendance", "domain": "Attendance", "description": "Attendance counts grouped by department."},
+        {"id": "late_arrivals", "title": "Late Arrivals", "domain": "Attendance", "description": "Late employees and late-duration evidence."},
+        {"id": "missing_day_out", "title": "Missing Day Out", "domain": "Attendance", "description": "Employees checked in without a recorded day-out."},
+        {"id": "out_of_fence", "title": "Out-of-Fence Attendance", "domain": "Geofence", "description": "Geofence exceptions and rejected location validation evidence."},
+        {"id": "biometric_failures", "title": "Biometric Failures", "domain": "Attendance", "description": "Failed, locked, or unavailable biometric events."},
+        {"id": "leave_usage", "title": "Leave Usage", "domain": "Leave", "description": "Allocated, used, and available leave balances."},
+        {"id": "holiday_impact", "title": "Holiday Impact", "domain": "Leave", "description": "Paid/unpaid holidays and payroll impact."},
+        {"id": "payroll_summary", "title": "Payroll Summary", "domain": "Payroll", "description": "Payroll runs or employee payroll result totals."},
+        {"id": "payroll_variance", "title": "Payroll Variance", "domain": "Payroll", "description": "Net-pay spread by employee across generated payroll results."},
+        {"id": "salary_adjustments", "title": "Salary Adjustments", "domain": "Finance", "description": "Approved and pending finance payroll adjustments."},
+        {"id": "salary_increment_history", "title": "Salary Increment History", "domain": "HR", "description": "Employee salary revisions and increment history."},
+        {"id": "employee_lifecycle", "title": "Employee Lifecycle Events", "domain": "HR", "description": "Promotions, transfers, warnings, exits, and other lifecycle events."},
+        {"id": "employee_turnover", "title": "Employee Turnover", "domain": "HR", "description": "Join, exit, and turnover metrics."},
+        {"id": "geofence_compliance", "title": "Geofence Compliance", "domain": "Geofence", "description": "Location validation outcomes, distances, and accuracy evidence."},
+    ]
+
+def _reports_dashboard():
+    catalog = _report_catalog()
+    reports = []
+    for report in catalog:
+        rows = _report_rows(report["id"])
+        reports.append({
+            **report,
+            "row_count": len(rows),
+            "sample": rows[:5],
+        })
+    summary = {
+        "reports": len(reports),
+        "attendance_records": len(_items("attendance_records", 1000)),
+        "leave_applications": len(_items("leave_applications", 1000)),
+        "payroll_results": len(_items("payroll_employee_results", 1000)),
+        "geofence_validations": len(_items("attendance_validation_results", 1000)),
+        "audit_events": len(_items("audit_logs", 1000)),
+    }
+    return {"stats": summary, "reports": reports}
 
 def _apply_attendance_correction(request: dict[str, Any], actor: str, comments: str):
     data = request.get("data", {})
@@ -1754,6 +1946,27 @@ def v1_hr_holiday(payload: HolidayRequest, email: str = Depends(_verify)):
 @app.get("/api/v1/hr/attendance-dashboard")
 def v1_hr_attendance_dashboard(_: str = Depends(_verify)):
     return _attendance_dashboard()
+
+@app.get("/api/v1/reports/dashboard")
+def v1_reports_dashboard(_: str = Depends(_verify)):
+    return _reports_dashboard()
+
+@app.get("/api/v1/reports/{report_id}")
+def v1_report_detail(report_id: str, _: str = Depends(_verify)):
+    rows = _report_rows(report_id)
+    catalog = {item["id"]: item for item in _report_catalog()}
+    meta = catalog.get(report_id, {"id": report_id, "title": report_id.replace("_", " ").title(), "domain": "Report", "description": ""})
+    return {**meta, "row_count": len(rows), "rows": rows[:500]}
+
+@app.get("/api/v1/reports/{report_id}/export")
+def v1_report_export(report_id: str, _: str = Depends(_verify)):
+    rows = _report_rows(report_id)
+    csv = _csv_from_rows(rows)
+    return Response(
+        content=csv,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={report_id}.csv"},
+    )
 
 @app.get("/api/v1/hr/attendance/export")
 def v1_hr_attendance_export(_: str = Depends(_verify)):
