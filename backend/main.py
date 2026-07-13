@@ -1068,16 +1068,32 @@ def _group_count(rows: list[dict[str, Any]], key: str):
         grouped[label] = grouped.get(label, 0) + 1
     return [{"label": label, "count": count} for label, count in sorted(grouped.items())]
 
-def _report_rows(report_id: str):
+def _report_sources():
+    return {
+        "attendance": [_attendance_row_summary(item) for item in _items("attendance_records", 1000)],
+        "leave_dashboard": _leave_dashboard(),
+        "payroll_results": [item.get("data", {}) for item in _items("payroll_employee_results", 1000)],
+        "payroll_runs": [item.get("data", {}) for item in _items("payroll_runs", 500)],
+        "adjustments": [item.get("data", {}) for item in _items("payroll_adjustments", 1000)],
+        "lifecycle": [item.get("data", {}) for item in _items("employee_lifecycle_events", 1000)],
+        "validation_results": [item.get("data", {}) for item in _items("attendance_validation_results", 1000)],
+        "employees": [item.get("data", {}) for item in _items("employees", 1000)],
+        "biometric_events": _items("attendance_biometric_events", 1000),
+        "salary_revisions": [item.get("data", {}) for item in _items("salary_revision_history", 1000)],
+        "audit_logs": _items("audit_logs", 1000),
+    }
+
+def _report_rows(report_id: str, sources: dict[str, Any] | None = None):
     report_id = report_id.strip().lower()
-    attendance = [_attendance_row_summary(item) for item in _items("attendance_records", 1000)]
-    leave_dashboard = _leave_dashboard()
-    payroll_results = [item.get("data", {}) for item in _items("payroll_employee_results", 1000)]
-    payroll_runs = [item.get("data", {}) for item in _items("payroll_runs", 500)]
-    adjustments = [item.get("data", {}) for item in _items("payroll_adjustments", 1000)]
-    lifecycle = [item.get("data", {}) for item in _items("employee_lifecycle_events", 1000)]
-    validation_results = [item.get("data", {}) for item in _items("attendance_validation_results", 1000)]
-    employees = [item.get("data", {}) for item in _items("employees", 1000)]
+    sources = sources or _report_sources()
+    attendance = sources["attendance"]
+    leave_dashboard = sources["leave_dashboard"]
+    payroll_results = sources["payroll_results"]
+    payroll_runs = sources["payroll_runs"]
+    adjustments = sources["adjustments"]
+    lifecycle = sources["lifecycle"]
+    validation_results = sources["validation_results"]
+    employees = sources["employees"]
 
     if report_id == "daily_attendance":
         return attendance
@@ -1105,7 +1121,7 @@ def _report_rows(report_id: str):
         ]
     if report_id == "biometric_failures":
         return [
-            item.get("data", {}) for item in _items("attendance_biometric_events", 1000)
+            item.get("data", {}) for item in sources["biometric_events"]
             if item.get("status") == "Failed" or item.get("data", {}).get("verification_result") in {"failed", "locked", "unavailable"}
         ]
     if report_id == "leave_usage":
@@ -1155,7 +1171,7 @@ def _report_rows(report_id: str):
     if report_id == "salary_adjustments":
         return adjustments
     if report_id == "salary_increment_history":
-        return [item.get("data", {}) for item in _items("salary_revision_history", 1000)]
+        return sources["salary_revisions"]
     if report_id == "employee_lifecycle":
         return lifecycle
     if report_id == "geofence_compliance":
@@ -1207,9 +1223,10 @@ def _report_catalog():
 
 def _reports_dashboard():
     catalog = _report_catalog()
+    sources = _report_sources()
     reports = []
     for report in catalog:
-        rows = _report_rows(report["id"])
+        rows = _report_rows(report["id"], sources)
         reports.append({
             **report,
             "row_count": len(rows),
@@ -1217,11 +1234,11 @@ def _reports_dashboard():
         })
     summary = {
         "reports": len(reports),
-        "attendance_records": len(_items("attendance_records", 1000)),
-        "leave_applications": len(_items("leave_applications", 1000)),
-        "payroll_results": len(_items("payroll_employee_results", 1000)),
-        "geofence_validations": len(_items("attendance_validation_results", 1000)),
-        "audit_events": len(_items("audit_logs", 1000)),
+        "attendance_records": len(sources["attendance"]),
+        "leave_applications": len(sources["leave_dashboard"]["applications"]),
+        "payroll_results": len(sources["payroll_results"]),
+        "geofence_validations": len(sources["validation_results"]),
+        "audit_events": len(sources["audit_logs"]),
     }
     return {"stats": summary, "reports": reports}
 
