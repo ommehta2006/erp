@@ -1499,6 +1499,19 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "NotificationReadRequest": {
+        "properties": {
+          "notification_id": {
+            "title": "Notification Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notification_id"
+        ],
+        "title": "NotificationReadRequest",
+        "type": "object"
+      },
       "PayrollGenerateRequest": {
         "properties": {
           "branch": {
@@ -3007,6 +3020,104 @@
         "summary": "V1 Employee Leave Balance"
       }
     },
+    "/api/v1/employee/notifications": {
+      "get": {
+        "operationId": "v1_employee_notifications_api_v1_employee_notifications_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Employee Notifications"
+      }
+    },
+    "/api/v1/employee/notifications/read": {
+      "post": {
+        "operationId": "v1_employee_notification_read_api_v1_employee_notifications_read_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationReadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Employee Notification Read"
+      }
+    },
     "/api/v1/employee/profile": {
       "get": {
         "operationId": "v1_employee_profile_api_v1_employee_profile_get",
@@ -3049,6 +3160,50 @@
           }
         },
         "summary": "V1 Employee Profile"
+      }
+    },
+    "/api/v1/employee/salary-slips": {
+      "get": {
+        "operationId": "v1_employee_salary_slips_api_v1_employee_salary_slips_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Employee Salary Slips"
       }
     },
     "/api/v1/employee/work-location": {

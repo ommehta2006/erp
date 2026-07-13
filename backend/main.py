@@ -212,6 +212,9 @@ class HrShiftRequest(BaseModel):
     supervisor: str | None = None
     status: str = "Active"
 
+class NotificationReadRequest(BaseModel):
+    notification_id: str
+
 class BiometricVerificationRequest(BaseModel):
     event_type: str = "day_in"
     attendance_record_id: str | None = None
@@ -654,6 +657,66 @@ def _write_audit(actor: str, action: str, entity_type: str, entity_id: str, new_
         })
     except Exception:
         pass
+
+def _notify_employee(employee_code: str, notification_type: str, title: str, message: str, email: str = ""):
+    try:
+        return storage.create_record("notifications", {
+            "notification_id": _new_ref("NTF"),
+            "recipient_employee_code": employee_code,
+            "recipient_email": email or employee_code,
+            "notification_type": notification_type,
+            "title": title,
+            "message": message,
+            "read_status": "Unread",
+            "delivery_status": "In App",
+            "status": "Open",
+        })
+    except Exception:
+        return None
+
+def _employee_notifications(employee_code: str, email: str, limit: int = 100):
+    rows = _items("notifications", limit)
+    normalized_code = employee_code.strip().lower()
+    normalized_email = email.strip().lower()
+    return [
+        item for item in rows
+        if (
+            item.get("data", {}).get("recipient_employee_code", "").strip().lower() == normalized_code
+            or item.get("data", {}).get("recipient_email", "").strip().lower() == normalized_email
+        )
+    ]
+
+def _salary_slip_rows(employee_code: str, limit: int = 24):
+    rows = _records_for_employee("salary_slips", employee_code, limit)
+    return [
+        {
+            "id": item.get("id", ""),
+            "period": item.get("data", {}).get("period", ""),
+            "gross_pay": item.get("data", {}).get("gross_pay", "0"),
+            "deductions": item.get("data", {}).get("deductions", "0"),
+            "net_pay": item.get("data", {}).get("net_pay", "0"),
+            "payment_date": item.get("data", {}).get("payment_date", ""),
+            "status": item.get("status") or item.get("data", {}).get("status", ""),
+            "lines": [
+                {
+                    "component_name": "Gross Pay",
+                    "component_type": "Earning",
+                    "amount": item.get("data", {}).get("gross_pay", "0"),
+                },
+                {
+                    "component_name": "Deductions",
+                    "component_type": "Deduction",
+                    "amount": item.get("data", {}).get("deductions", "0"),
+                },
+                {
+                    "component_name": "Net Pay",
+                    "component_type": "Net",
+                    "amount": item.get("data", {}).get("net_pay", "0"),
+                },
+            ],
+        }
+        for item in rows
+    ]
 
 def _items(resource: str, limit: int = 500):
     try:
@@ -1108,6 +1171,7 @@ def _create_leave_application(payload: LeaveApplicationRequest, actor: str, empl
         "status": "Pending",
     })
     _write_audit(actor, "apply_leave", "leave_applications", app_id, item.get("data", {}), payload.reason)
+    _notify_employee(code, "leave_submitted", "Leave request submitted", f"{payload.leave_type.strip()} from {payload.start_date} to {payload.end_date} is pending approval.", actor)
     return item
 
 def _record_key(item: dict[str, Any], id_field: str):
@@ -1717,6 +1781,7 @@ def _payroll_calculation(payload: PayrollGenerateRequest, actor: str):
                 "payment_date": "",
                 "status": "Draft",
             })
+            _notify_employee(employee_code, "salary_slip_generated", "Salary slip generated", f"{payload.period_name} draft net pay is {net_pay:.2f}.", employee_code)
     totals = {key: (round(value, 2) if isinstance(value, float) else value) for key, value in totals.items()}
     if not payload.dry_run and totals["employees"] > 0:
         run_item = storage.create_record("payroll_runs", {
@@ -1984,7 +2049,8 @@ def employee_summary(email: str = Depends(_verify)):
     policy = _attendance_policy()
     attendance = _attendance_snapshot(employee_code, policy)
     calendar = _attendance_calendar(employee_code)
-    salary = _records_for_employee("salary_slips", employee_code, 12)
+    salary = _salary_slip_rows(employee_code, 12)
+    notifications = _employee_notifications(employee_code, email, 100)
     leaves = _records_for_employee("leave_requests", employee_code, 100)
     balances = _records_for_employee("leave_balances", employee_code, 20)
     locations = _records_for_employee("employee_locations", employee_code, 20)
@@ -2002,8 +2068,12 @@ def employee_summary(email: str = Depends(_verify)):
             "balances": [row.get("data", {}) for row in balances],
         },
         "salary": {
-            "latest": salary[0].get("data", {}) if salary else None,
+            "latest": salary[0] if salary else None,
             "count": len(salary),
+        },
+        "notifications": {
+            "unread": len([row for row in notifications if row.get("data", {}).get("read_status", "Unread") == "Unread"]),
+            "latest": notifications[0].get("data", {}) if notifications else None,
         },
         "tracking": {
             "last_location": locations[0].get("data", {}) if locations else None,
@@ -2075,6 +2145,7 @@ def v1_employee_attendance_correction(payload: AttendanceCorrectionRequest, emai
         "status": "Pending Approval",
     })
     _write_audit(email, "submit_attendance_correction", "attendance_correction_requests", item.get("id", ""), item.get("data", {}), payload.reason)
+    _notify_employee(employee_code, "attendance_correction_submitted", "Attendance correction submitted", f"{payload.attendance_date.strip()} correction request is pending HR review.", email)
     return {"item": item}
 
 @app.get("/api/v1/employee/leave/balance")
@@ -2654,6 +2725,7 @@ def employee_day_in(payload: EmployeeAttendanceEvent, email: str = Depends(_veri
             "event": "day_in",
             "status": "Active",
         })
+    _notify_employee(employee_code, "day_in_success", "Day In recorded", f"Day In at {_hhmm()} with {validation['geofence_status']} status.", email)
     _write_audit(email, "day_in", "attendance", item.get("id", ""), {"attendance": item, "validation": validation}, "Employee mobile day-in.")
     return {"item": item, "attendance": _attendance_snapshot(employee_code, policy), "attendance_policy": policy, "validation": validation, "refs": refs}
 
@@ -2690,6 +2762,7 @@ def employee_day_out(payload: EmployeeAttendanceEvent, email: str = Depends(_ver
             "event": "day_out",
             "status": "Completed",
         })
+    _notify_employee(employee_code, "day_out_success", "Day Out recorded", f"Day Out at {_hhmm()} with {validation['geofence_status']} status.", email)
     _write_audit(email, "day_out", "attendance", item.get("id", ""), {"attendance": item, "validation": validation}, "Employee mobile day-out.")
     return {"item": item, "attendance": _attendance_snapshot(employee_code, policy), "attendance_policy": policy, "validation": validation, "refs": refs}
 
@@ -2730,7 +2803,41 @@ def employee_attendance_policy(_: str = Depends(_verify)):
 @app.get("/api/mobile/employee/salary")
 def employee_salary(email: str = Depends(_verify)):
     employee_code = _employee_code(email)
-    return {"items": _records_for_employee("salary_slips", employee_code, 24)}
+    slips = _salary_slip_rows(employee_code, 24)
+    totals = {
+        "gross_pay": round(sum(_money(item.get("gross_pay")) for item in slips), 2),
+        "deductions": round(sum(_money(item.get("deductions")) for item in slips), 2),
+        "net_pay": round(sum(_money(item.get("net_pay")) for item in slips), 2),
+    }
+    return {"items": slips, "latest": slips[0] if slips else None, "totals": totals}
+
+@app.get("/api/v1/employee/salary-slips")
+def v1_employee_salary_slips(email: str = Depends(_verify)):
+    return employee_salary(email)
+
+@app.get("/api/v1/employee/notifications")
+def v1_employee_notifications(email: str = Depends(_verify)):
+    employee_code = _employee_code(email)
+    notifications = _employee_notifications(employee_code, email, 100)
+    return {
+        "items": notifications,
+        "unread": len([row for row in notifications if row.get("data", {}).get("read_status", "Unread") == "Unread"]),
+    }
+
+@app.post("/api/v1/employee/notifications/read")
+def v1_employee_notification_read(payload: NotificationReadRequest, email: str = Depends(_verify)):
+    employee_code = _employee_code(email)
+    notification = next(
+        (
+            item for item in _employee_notifications(employee_code, email, 200)
+            if item.get("id") == payload.notification_id or item.get("data", {}).get("notification_id") == payload.notification_id
+        ),
+        None,
+    )
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found.")
+    updated = storage.update_record("notifications", notification.get("id", ""), {"read_status": "Read", "status": "Closed"})
+    return {"item": updated, "dashboard": v1_employee_notifications(email)}
 
 @app.post("/api/mobile/employee/leave")
 def employee_leave(payload: LeaveApplyRequest, email: str = Depends(_verify)):

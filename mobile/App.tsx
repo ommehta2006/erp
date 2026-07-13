@@ -43,6 +43,7 @@ type EmployeeSummary = {
   calendar: AttendanceCalendar;
   leave: { pending: number; approved: number; balances: Record<string, string>[] };
   salary: { latest: Record<string, string> | null; count: number };
+  notifications: { unread: number; latest: Record<string, string> | null };
   tracking: { last_location: Record<string, string> | null; ping_count: number };
 };
 type AttendanceCalendar = {
@@ -73,6 +74,18 @@ type Module = {
   items: RecordItem[];
 };
 type RecordItem = { id: string; resource?: string; data: Record<string, string>; status: string };
+type SalarySlip = {
+  id: string;
+  period: string;
+  gross_pay: string;
+  deductions: string;
+  net_pay: string;
+  payment_date: string;
+  status: string;
+  lines: { component_name: string; component_type: string; amount: string }[];
+};
+type SalaryDashboard = { items: SalarySlip[]; latest: SalarySlip | null; totals: { gross_pay: number; deductions: number; net_pay: number } };
+type NotificationDashboard = { items: RecordItem[]; unread: number };
 type Screen =
   | { name: "home" }
   | { name: "work" }
@@ -288,6 +301,8 @@ function HomeScreen({ token, user, navigate }: { token: string; user: User; navi
 function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Screen) => void }) {
   const { data, loading, error, refresh } = useApi<EmployeeSummary>(token, "/api/mobile/employee/summary");
   const { data: history, loading: historyLoading, error: historyError, refresh: refreshHistory } = useApi<EmployeeHistory>(token, "/api/v1/employee/attendance/history");
+  const { data: salary, loading: salaryLoading, error: salaryError, refresh: refreshSalary } = useApi<SalaryDashboard>(token, "/api/v1/employee/salary-slips");
+  const { data: notifications, loading: notificationsLoading, error: notificationsError, refresh: refreshNotifications } = useApi<NotificationDashboard>(token, "/api/v1/employee/notifications");
   const [busy, setBusy] = useState(false);
   const [leaveType, setLeaveType] = useState("Casual Leave");
   const [fromDate, setFromDate] = useState("");
@@ -332,6 +347,7 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
       if (kind === "day-out") setTracking(false);
       refresh();
       refreshHistory();
+      refreshNotifications();
     } catch (err) {
       Alert.alert("Attendance", err instanceof Error ? err.message : "Attendance action failed");
     } finally {
@@ -374,6 +390,7 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
       Alert.alert("Leave request", "Leave request saved to ERP for approval.");
       refresh();
       refreshHistory();
+      refreshNotifications();
     } catch (err) {
       Alert.alert("Leave request", err instanceof Error ? err.message : "Leave apply failed");
     } finally {
@@ -408,6 +425,7 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
       setCorrectionReason("");
       Alert.alert("Correction request", "Request submitted to HR for approval.");
       refreshHistory();
+      refreshNotifications();
     } catch (err) {
       Alert.alert("Correction request", err instanceof Error ? err.message : "Correction request failed");
     } finally {
@@ -415,11 +433,34 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
     }
   }
 
+  async function markNotificationRead(notificationId: string) {
+    setBusy(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/v1/employee/notifications/read`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ notification_id: notificationId })
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.detail || "Notification update failed");
+      }
+      refreshNotifications();
+      refresh();
+    } catch (err) {
+      Alert.alert("Notifications", err instanceof Error ? err.message : "Notification update failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <ScreenScroll refresh={() => { refresh(); refreshHistory(); }} loading={loading || historyLoading}>
+    <ScreenScroll refresh={() => { refresh(); refreshHistory(); refreshSalary(); refreshNotifications(); }} loading={loading || historyLoading || salaryLoading || notificationsLoading}>
       <TopBar title="Employee Work" subtitle="Attendance, leave, salary, calendar and location controls" />
       {error ? <ErrorBanner message={error} /> : null}
       {historyError ? <ErrorBanner message={historyError} /> : null}
+      {salaryError ? <ErrorBanner message={salaryError} /> : null}
+      {notificationsError ? <ErrorBanner message={notificationsError} /> : null}
 
       <LinearGradient colors={data?.attendance.checked_in ? ["#065f46", "#0f766e"] : ["#0f172a", "#334155"]} style={styles.attendanceCard}>
         <View style={styles.moduleHeader}>
@@ -449,6 +490,23 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
           <Text style={styles.trackButtonText}>{tracking ? "Working-hours location tracking active" : "Enable working-hours location tracking"}</Text>
         </Pressable>
       </LinearGradient>
+
+      <SectionHeader title="Notifications" action={`${notifications?.unread || data?.notifications?.unread || 0} unread`} />
+      {(notifications?.items || []).length === 0 ? (
+        <EmptyState title="No notifications" body="Attendance, leave, payroll, and HR updates will appear here from the live ERP." />
+      ) : notifications?.items.slice(0, 4).map((item) => (
+        <Pressable
+          key={item.id}
+          style={[styles.notificationCard, item.data.read_status === "Unread" && styles.notificationUnread]}
+          onPress={() => markNotificationRead(item.data.notification_id || item.id)}
+        >
+          <View style={styles.flex}>
+            <Text style={styles.notificationTitle}>{item.data.title || pretty(item.data.notification_type || "Notification")}</Text>
+            <Text style={styles.notificationBody}>{item.data.message || "ERP notification"}</Text>
+          </View>
+          <Text style={styles.notificationStatus}>{item.data.read_status || "Unread"}</Text>
+        </Pressable>
+      ))}
 
       <SectionHeader title="This Month" />
       <View style={styles.calendarStats}>
@@ -515,6 +573,29 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
           </>
         ) : (
           <Text style={styles.mutedText}>No salary slip released yet. HR payroll records will appear here from the live ERP.</Text>
+        )}
+      </View>
+
+      <SectionHeader title="Salary Details" action={`${salary?.items.length || 0} slips`} />
+      <View style={styles.largeCard}>
+        {salary?.latest ? (
+          <>
+            <Text style={styles.cardTitle}>{salary.latest.period || "Latest payroll period"}</Text>
+            <Text style={styles.salaryAmount}>Rs. {salary.latest.net_pay || "0"}</Text>
+            <Text style={styles.cardMeta}>Gross Rs. {salary.latest.gross_pay || "0"} . Deductions Rs. {salary.latest.deductions || "0"}</Text>
+            {salary.latest.lines.map((line) => (
+              <View key={`${line.component_name}-${line.component_type}`} style={styles.salaryLine}>
+                <Text style={styles.salaryLineName}>{line.component_name}</Text>
+                <Text style={styles.salaryLineAmount}>Rs. {line.amount}</Text>
+              </View>
+            ))}
+            <View style={styles.salaryTotals}>
+              <CountTile label="Slips" value={salary.items.length} color="#0f766e" />
+              <CountTile label="YTD Net" value={Math.round(salary.totals.net_pay)} color="#0284c7" />
+            </View>
+          </>
+        ) : (
+          <Text style={styles.mutedText}>Detailed salary slips will appear after Finance generates payroll in the ERP.</Text>
         )}
       </View>
 
@@ -965,7 +1046,16 @@ const styles = StyleSheet.create({
   historyTitle: { color: "#0f172a", fontSize: 14, fontWeight: "900" },
   historyMeta: { marginTop: 3, color: "#64748b", fontSize: 12 },
   historyStatus: { overflow: "hidden", borderRadius: 10, backgroundColor: "#e0f2fe", paddingHorizontal: 8, paddingVertical: 5, color: "#0369a1", fontSize: 12, fontWeight: "900" },
+  notificationCard: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 16, backgroundColor: "white", padding: 14, borderWidth: 1, borderColor: "#e2e8f0", marginBottom: 8 },
+  notificationUnread: { borderColor: "#0f766e", backgroundColor: "#f0fdfa" },
+  notificationTitle: { color: "#0f172a", fontSize: 14, fontWeight: "900" },
+  notificationBody: { marginTop: 3, color: "#64748b", fontSize: 12, lineHeight: 17 },
+  notificationStatus: { overflow: "hidden", borderRadius: 10, backgroundColor: "#ccfbf1", paddingHorizontal: 8, paddingVertical: 5, color: "#0f766e", fontSize: 12, fontWeight: "900" },
   salaryAmount: { marginTop: 8, color: "#0f766e", fontSize: 30, fontWeight: "900" },
+  salaryLine: { marginTop: 10, flexDirection: "row", justifyContent: "space-between", gap: 12, borderTopWidth: 1, borderTopColor: "#f1f5f9", paddingTop: 10 },
+  salaryLineName: { color: "#334155", fontSize: 13, fontWeight: "800" },
+  salaryLineAmount: { color: "#0f172a", fontSize: 13, fontWeight: "900" },
+  salaryTotals: { flexDirection: "row", gap: 8, marginTop: 12 },
   heroEyebrow: { color: "#99f6e4", fontSize: 12, fontWeight: "800", textTransform: "uppercase" },
   heroTitle: { marginTop: 8, color: "white", fontSize: 26, fontWeight: "800", lineHeight: 31 },
   heroCopy: { marginTop: 8, color: "#cbd5e1", fontSize: 14, lineHeight: 20 },
