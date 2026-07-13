@@ -352,6 +352,57 @@ class Storage:
         con.commit()
         con.close()
 
+    def list_users(self, limit: int = 200):
+        limit = min(max(int(limit), 1), 500)
+        if self.mode == "supabase":
+            response = self.client.table("app_users").select("id,email,full_name,role,department_id,status,failed_login_count,locked_until,last_login_at,created_at,updated_at").limit(limit).execute()
+            return response.data
+        con = sqlite3.connect(self.db_path)
+        con.row_factory = sqlite3.Row
+        rows = con.execute("select id,email,full_name,role,department_id,status,failed_login_count,locked_until,last_login_at,created_at,updated_at from app_users order by updated_at desc limit ?", (limit,)).fetchall()
+        con.close()
+        return [dict(row) for row in rows]
+
+    def create_user(self, payload: dict[str, Any]):
+        email = str(payload.get("email", "")).strip().lower()
+        if not email:
+            raise ValueError("email is required")
+        now = int(time.time())
+        row = {
+            "id": str(uuid.uuid4()),
+            "email": email,
+            "password_hash": payload.get("password_hash"),
+            "full_name": payload.get("full_name", ""),
+            "role": payload.get("role", "FACTORY_USER"),
+            "department_id": payload.get("department_id", ""),
+            "status": payload.get("status", "Active"),
+            "failed_login_count": 0,
+            "locked_until": None,
+            "last_login_at": None,
+            "created_at": now,
+            "updated_at": now,
+        }
+        if self.mode == "supabase":
+            response = self.client.table("app_users").insert({
+                "email": row["email"],
+                "password_hash": row["password_hash"],
+                "full_name": row["full_name"],
+                "role": row["role"],
+                "department_id": row["department_id"] or None,
+                "status": row["status"],
+            }).execute()
+            return response.data[0]
+        con = sqlite3.connect(self.db_path)
+        con.execute(
+            "insert into app_users (id,email,password_hash,full_name,role,department_id,status,failed_login_count,locked_until,last_login_at,created_at,updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (row["id"], row["email"], row["password_hash"], row["full_name"], row["role"], row["department_id"], row["status"], row["failed_login_count"], row["locked_until"], row["last_login_at"], row["created_at"], row["updated_at"]),
+        )
+        con.commit()
+        con.close()
+        clean = dict(row)
+        clean.pop("password_hash", None)
+        return clean
+
     def list_records(self, resource: str, limit: int = 100):
         self._require_resource(resource)
         limit = min(max(int(limit), 1), 500)

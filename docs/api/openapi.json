@@ -1,6 +1,50 @@
 {
   "components": {
     "schemas": {
+      "AdminUserCreateRequest": {
+        "properties": {
+          "department_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department Id"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          },
+          "password": {
+            "title": "Password",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "default": "Active",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password",
+          "full_name",
+          "role"
+        ],
+        "title": "AdminUserCreateRequest",
+        "type": "object"
+      },
       "AttendanceCorrectionDecisionRequest": {
         "properties": {
           "apply_to_attendance": {
@@ -2151,6 +2195,104 @@
           }
         },
         "summary": "Operations Incidents"
+      }
+    },
+    "/api/v1/admin/security-dashboard": {
+      "get": {
+        "operationId": "v1_admin_security_dashboard_api_v1_admin_security_dashboard_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Admin Security Dashboard"
+      }
+    },
+    "/api/v1/admin/users": {
+      "post": {
+        "operationId": "v1_admin_create_user_api_v1_admin_users_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Admin Create User"
       }
     },
     "/api/v1/employee/attendance/biometric": {

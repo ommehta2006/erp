@@ -30,6 +30,24 @@ AUTH_CONFIGURED = bool(APP_SECRET_KEY)
 MAX_LOGIN_ATTEMPTS = int(os.getenv("MAX_LOGIN_ATTEMPTS", "5"))
 LOGIN_LOCK_SECONDS = int(os.getenv("LOGIN_LOCK_SECONDS", "900"))
 
+ROLE_PERMISSIONS = {
+    "FACTORY_ADMIN": {"admin:*", "hr:*", "finance:*", "reports:*", "records:*", "employee:*"},
+    "SUPER_ADMIN": {"admin:*", "hr:*", "finance:*", "reports:*", "records:*", "employee:*"},
+    "HR_ADMIN": {"hr:*", "reports:read", "records:hr", "employee:read"},
+    "HR_MANAGER": {"hr:read", "hr:attendance", "hr:leave", "reports:read", "records:hr"},
+    "FINANCE_ADMIN": {"finance:*", "reports:read", "records:finance"},
+    "REPORTING_MANAGER": {"reports:read"},
+    "AUDITOR": {"reports:read", "admin:audit", "hr:read", "finance:read"},
+    "EMPLOYEE": {"employee:*"},
+    "FACTORY_USER": {"reports:read"},
+}
+
+RESOURCE_PERMISSIONS = {
+    "finance": "finance:write",
+    "hr": "hr:write",
+    "admin": "admin:write",
+}
+
 class LoginRequest(BaseModel):
     email: str
     password: str
@@ -148,6 +166,14 @@ class PayrollGenerateRequest(BaseModel):
     department: str | None = None
     dry_run: bool = False
 
+class AdminUserCreateRequest(BaseModel):
+    email: str
+    password: str
+    full_name: str
+    role: str
+    department_id: str | None = None
+    status: str = "Active"
+
 class HrEmployeeOnboardingRequest(BaseModel):
     employee_code: str
     full_name: str
@@ -214,6 +240,16 @@ def _verify_password(password: str, password_hash: str | None) -> bool:
     except Exception:
         return False
 
+def _hash_password(password: str) -> str:
+    salt = os.urandom(16)
+    iterations = 260000
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
+    return "pbkdf2_sha256$%s$%s$%s" % (
+        iterations,
+        base64.b64encode(salt).decode(),
+        base64.b64encode(digest).decode(),
+    )
+
 def _locked_until_epoch(value: Any) -> int:
     if not value:
         return 0
@@ -260,6 +296,52 @@ def _verify(authorization: str | None = Header(default=None)) -> str:
     if not hmac.compare_digest(sig, expected) or int(exp) < int(time.time()):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     return email
+
+def _user_context(email: str):
+    normalized = email.strip().lower()
+    if normalized == ADMIN_EMAIL.strip().lower():
+        return {"email": normalized, "name": "FactoryPulse Admin", "role": "FACTORY_ADMIN", "status": "Active"}
+    user = storage.get_user_by_email(normalized)
+    if user:
+        return {
+            "email": normalized,
+            "name": user.get("full_name") or normalized,
+            "role": user.get("role") or "FACTORY_USER",
+            "department_id": user.get("department_id"),
+            "status": user.get("status", "Active"),
+        }
+    employee = _active_record(_records_by_field("employees", "email", normalized, 20))
+    if employee:
+        data = employee.get("data", {})
+        return {"email": normalized, "name": data.get("full_name") or normalized, "role": "EMPLOYEE", "employee_code": data.get("employee_code") or normalized, "status": data.get("status", "Active")}
+    return {"email": normalized, "name": normalized, "role": "FACTORY_USER", "status": "Active"}
+
+def _permission_allowed(role: str, permission: str):
+    permissions = ROLE_PERMISSIONS.get(role, ROLE_PERMISSIONS["FACTORY_USER"])
+    namespace = permission.split(":", 1)[0]
+    return permission in permissions or f"{namespace}:*" in permissions or "admin:*" in permissions
+
+def _require_permission(email: str, permission: str):
+    user = _user_context(email)
+    if user.get("status") != "Active":
+        raise HTTPException(status_code=403, detail="User is not active.")
+    if not _permission_allowed(user["role"], permission):
+        _write_audit(email, "permission_denied", "rbac", permission, {"role": user["role"], "permission": permission}, "RBAC permission denied.")
+        raise HTTPException(status_code=403, detail=f"Permission denied: {permission}")
+    return user
+
+def _resource_department(resource: str):
+    for department_id, department in DEPARTMENTS.items():
+        if resource in department.get("modules", []):
+            return department_id
+    return ""
+
+def _require_resource_write(email: str, resource: str):
+    department = _resource_department(resource)
+    permission = RESOURCE_PERMISSIONS.get(department, "records:write")
+    if department and _permission_allowed(_user_context(email)["role"], f"records:{department}"):
+        return _user_context(email)
+    return _require_permission(email, permission)
 
 def _employee_code(email: str, supplied: str | None = None) -> str:
     return email.strip().lower()
@@ -1242,6 +1324,52 @@ def _reports_dashboard():
     }
     return {"stats": summary, "reports": reports}
 
+def _security_dashboard():
+    users = storage.list_users(250)
+    bootstrap = {
+        "email": ADMIN_EMAIL.strip().lower(),
+        "full_name": "FactoryPulse Admin",
+        "role": "FACTORY_ADMIN",
+        "department_id": "admin",
+        "status": "Active",
+        "failed_login_count": 0,
+        "locked_until": None,
+        "bootstrap": True,
+    }
+    user_rows = [bootstrap, *users]
+    audit_logs = _items("audit_logs", 500)
+    device_events = _items("device_integrity_events", 500)
+    permission_denied = [item for item in audit_logs if item.get("data", {}).get("action") == "permission_denied"]
+    locked_users = [item for item in user_rows if _locked_until_epoch(item.get("locked_until")) > int(time.time())]
+    failed_login_users = [item for item in user_rows if int(item.get("failed_login_count") or 0) > 0]
+    return {
+        "stats": {
+            "users": len(user_rows),
+            "active_users": len([item for item in user_rows if item.get("status") == "Active"]),
+            "locked_users": len(locked_users),
+            "failed_login_users": len(failed_login_users),
+            "roles": len(ROLE_PERMISSIONS),
+            "audit_logs": len(audit_logs),
+            "permission_denied_events": len(permission_denied),
+            "device_integrity_events": len(device_events),
+        },
+        "users": user_rows,
+        "roles": [
+            {"role": role, "permissions": sorted(permissions)}
+            for role, permissions in sorted(ROLE_PERMISSIONS.items())
+        ],
+        "recent_audit": audit_logs[:50],
+        "permission_denied": permission_denied[:50],
+        "device_integrity_events": device_events[:50],
+        "protected_surfaces": [
+            {"surface": "HR administration", "permission": "hr:*"},
+            {"surface": "Finance payroll", "permission": "finance:*"},
+            {"surface": "Reports", "permission": "reports:read"},
+            {"surface": "Generic record writes", "permission": "records:<department> or department write"},
+            {"surface": "Security center", "permission": "admin:security"},
+        ],
+    }
+
 def _apply_attendance_correction(request: dict[str, Any], actor: str, comments: str):
     data = request.get("data", {})
     employee_code = data.get("employee_code", "")
@@ -1846,11 +1974,13 @@ def v1_employee_biometric(payload: BiometricVerificationRequest, email: str = De
     return {"item": item, "biometric_privacy": "Raw fingerprints and biometric templates are not captured, transmitted, or stored."}
 
 @app.get("/api/v1/hr/overview")
-def v1_hr_overview(_: str = Depends(_verify)):
+def v1_hr_overview(email: str = Depends(_verify)):
+    _require_permission(email, "hr:read")
     return _hr_overview()
 
 @app.get("/api/v1/hr/employees-dashboard")
-def v1_hr_employees_dashboard(_: str = Depends(_verify)):
+def v1_hr_employees_dashboard(email: str = Depends(_verify)):
+    _require_permission(email, "hr:read")
     employees = _items("employees", 500)
     bundles = [_employee_bundle(row.get("data", {}).get("employee_code") or row.get("data", {}).get("email", "")) for row in employees]
     complete = [item for item in bundles if item["profile_completeness"] == 100]
@@ -1871,7 +2001,8 @@ def v1_hr_employees_dashboard(_: str = Depends(_verify)):
     }
 
 @app.get("/api/v1/hr/employees/{employee_code}")
-def v1_hr_employee_detail(employee_code: str, _: str = Depends(_verify)):
+def v1_hr_employee_detail(employee_code: str, email: str = Depends(_verify)):
+    _require_permission(email, "hr:read")
     bundle = _employee_bundle(employee_code)
     if not bundle["employee"]:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -1879,24 +2010,29 @@ def v1_hr_employee_detail(employee_code: str, _: str = Depends(_verify)):
 
 @app.post("/api/v1/hr/employees/onboard")
 def v1_hr_employee_onboard(payload: HrEmployeeOnboardingRequest, email: str = Depends(_verify)):
+    _require_permission(email, "hr:write")
     return _onboard_employee(payload, email)
 
 @app.post("/api/v1/hr/employees/lifecycle")
 def v1_hr_employee_lifecycle(payload: HrLifecycleEventRequest, email: str = Depends(_verify)):
+    _require_permission(email, "hr:write")
     item = _create_lifecycle_event(payload, email)
     return {"item": item, "profile": _employee_bundle(payload.employee_code)}
 
 @app.get("/api/v1/hr/leave-dashboard")
-def v1_hr_leave_dashboard(_: str = Depends(_verify)):
+def v1_hr_leave_dashboard(email: str = Depends(_verify)):
+    _require_permission(email, "hr:leave")
     return _leave_dashboard()
 
 @app.post("/api/v1/hr/leave/applications")
 def v1_hr_leave_application(payload: LeaveApplicationRequest, email: str = Depends(_verify)):
+    _require_permission(email, "hr:leave")
     item = _create_leave_application(payload, email, payload.employee_code)
     return {"item": item, "summary": _leave_application_summary(item), "dashboard": _leave_dashboard()}
 
 @app.post("/api/v1/hr/leave/decision")
 def v1_hr_leave_decision(payload: LeaveDecisionRequest, email: str = Depends(_verify)):
+    _require_permission(email, "hr:leave")
     decision = payload.decision.strip().title()
     if decision not in {"Approved", "Rejected", "Cancelled"}:
         raise HTTPException(status_code=422, detail="decision must be Approved, Rejected, or Cancelled.")
@@ -1926,6 +2062,7 @@ def v1_hr_leave_decision(payload: LeaveDecisionRequest, email: str = Depends(_ve
 
 @app.post("/api/v1/hr/leave/allocations")
 def v1_hr_leave_allocation(payload: LeaveAllocationRequest, email: str = Depends(_verify)):
+    _require_permission(email, "hr:leave")
     if not payload.employee_code.strip() or not payload.leave_type.strip() or payload.allocated_days < 0:
         raise HTTPException(status_code=422, detail="employee_code, leave_type, and non-negative allocated_days are required.")
     item = storage.create_record("leave_allocations", {
@@ -1944,6 +2081,7 @@ def v1_hr_leave_allocation(payload: LeaveAllocationRequest, email: str = Depends
 
 @app.post("/api/v1/hr/holidays")
 def v1_hr_holiday(payload: HolidayRequest, email: str = Depends(_verify)):
+    _require_permission(email, "hr:leave")
     _parse_iso_date(payload.holiday_date, "holiday_date")
     item = storage.create_record("holidays", {
         "holiday_id": _new_ref("HOL"),
@@ -1961,22 +2099,52 @@ def v1_hr_holiday(payload: HolidayRequest, email: str = Depends(_verify)):
     return {"item": item, "dashboard": _leave_dashboard()}
 
 @app.get("/api/v1/hr/attendance-dashboard")
-def v1_hr_attendance_dashboard(_: str = Depends(_verify)):
+def v1_hr_attendance_dashboard(email: str = Depends(_verify)):
+    _require_permission(email, "hr:attendance")
     return _attendance_dashboard()
 
 @app.get("/api/v1/reports/dashboard")
-def v1_reports_dashboard(_: str = Depends(_verify)):
+def v1_reports_dashboard(email: str = Depends(_verify)):
+    _require_permission(email, "reports:read")
     return _reports_dashboard()
 
+@app.get("/api/v1/admin/security-dashboard")
+def v1_admin_security_dashboard(email: str = Depends(_verify)):
+    _require_permission(email, "admin:security")
+    return _security_dashboard()
+
+@app.post("/api/v1/admin/users")
+def v1_admin_create_user(payload: AdminUserCreateRequest, email: str = Depends(_verify)):
+    _require_permission(email, "admin:security")
+    role = payload.role.strip().upper()
+    if role not in ROLE_PERMISSIONS:
+        raise HTTPException(status_code=422, detail=f"role must be one of: {', '.join(sorted(ROLE_PERMISSIONS))}")
+    if len(payload.password) < 8:
+        raise HTTPException(status_code=422, detail="password must be at least 8 characters.")
+    if storage.get_user_by_email(payload.email):
+        raise HTTPException(status_code=409, detail="User already exists.")
+    item = storage.create_user({
+        "email": payload.email,
+        "password_hash": _hash_password(payload.password),
+        "full_name": payload.full_name.strip(),
+        "role": role,
+        "department_id": _clean_text(payload.department_id),
+        "status": payload.status.strip() or "Active",
+    })
+    _write_audit(email, "create_app_user", "app_users", item.get("id", item.get("email", "")), {"email": item.get("email"), "role": item.get("role"), "status": item.get("status")}, "Admin created RBAC user.")
+    return {"item": item, "dashboard": _security_dashboard()}
+
 @app.get("/api/v1/reports/{report_id}")
-def v1_report_detail(report_id: str, _: str = Depends(_verify)):
+def v1_report_detail(report_id: str, email: str = Depends(_verify)):
+    _require_permission(email, "reports:read")
     rows = _report_rows(report_id)
     catalog = {item["id"]: item for item in _report_catalog()}
     meta = catalog.get(report_id, {"id": report_id, "title": report_id.replace("_", " ").title(), "domain": "Report", "description": ""})
     return {**meta, "row_count": len(rows), "rows": rows[:500]}
 
 @app.get("/api/v1/reports/{report_id}/export")
-def v1_report_export(report_id: str, _: str = Depends(_verify)):
+def v1_report_export(report_id: str, email: str = Depends(_verify)):
+    _require_permission(email, "reports:read")
     rows = _report_rows(report_id)
     csv = _csv_from_rows(rows)
     return Response(
@@ -1986,7 +2154,8 @@ def v1_report_export(report_id: str, _: str = Depends(_verify)):
     )
 
 @app.get("/api/v1/hr/attendance/export")
-def v1_hr_attendance_export(_: str = Depends(_verify)):
+def v1_hr_attendance_export(email: str = Depends(_verify)):
+    _require_permission(email, "hr:attendance")
     csv = _attendance_csv(_attendance_dashboard()["records"])
     return Response(
         content=csv,
@@ -1996,6 +2165,7 @@ def v1_hr_attendance_export(_: str = Depends(_verify)):
 
 @app.post("/api/v1/hr/attendance/decision")
 def v1_hr_attendance_decision(payload: AttendanceDecisionRequest, email: str = Depends(_verify)):
+    _require_permission(email, "hr:attendance")
     decision = payload.decision.strip().title()
     if decision not in {"Approved", "Rejected", "Pending Approval"}:
         raise HTTPException(status_code=422, detail="decision must be Approved, Rejected, or Pending Approval.")
@@ -2027,6 +2197,7 @@ def v1_hr_attendance_decision(payload: AttendanceDecisionRequest, email: str = D
 
 @app.post("/api/v1/hr/attendance/correction-decision")
 def v1_hr_attendance_correction_decision(payload: AttendanceCorrectionDecisionRequest, email: str = Depends(_verify)):
+    _require_permission(email, "hr:attendance")
     decision = payload.decision.strip().title()
     if decision not in {"Approved", "Rejected"}:
         raise HTTPException(status_code=422, detail="decision must be Approved or Rejected.")
@@ -2057,7 +2228,8 @@ def v1_hr_attendance_correction_decision(payload: AttendanceCorrectionDecisionRe
     return {"approval": approval, "request": updated_request, "corrected_attendance": corrected, "dashboard": _attendance_dashboard()}
 
 @app.get("/api/v1/hr/geofence-dashboard")
-def v1_hr_geofence_dashboard(_: str = Depends(_verify)):
+def v1_hr_geofence_dashboard(email: str = Depends(_verify)):
+    _require_permission(email, "hr:read")
     overview = _hr_overview()
     return {
         "stats": {
@@ -2072,7 +2244,8 @@ def v1_hr_geofence_dashboard(_: str = Depends(_verify)):
     }
 
 @app.get("/api/v1/finance/payroll-dashboard")
-def v1_finance_payroll_dashboard(_: str = Depends(_verify)):
+def v1_finance_payroll_dashboard(email: str = Depends(_verify)):
+    _require_permission(email, "finance:read")
     adjustments = _items("payroll_adjustments")
     runs = _items("payroll_runs")
     results = _items("payroll_employee_results")
@@ -2098,10 +2271,12 @@ def v1_finance_payroll_dashboard(_: str = Depends(_verify)):
 
 @app.post("/api/v1/payroll/generate")
 def v1_generate_payroll(payload: PayrollGenerateRequest, email: str = Depends(_verify)):
+    _require_permission(email, "finance:write")
     return _payroll_calculation(payload, email)
 
 @app.post("/api/v1/payroll/validate")
 def v1_validate_payroll(payload: PayrollGenerateRequest, email: str = Depends(_verify)):
+    _require_permission(email, "finance:read")
     data = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
     data["dry_run"] = True
     return _payroll_calculation(PayrollGenerateRequest(**data), email)
@@ -2282,7 +2457,8 @@ def list_module(resource: str, _: str = Depends(_verify)):
         raise HTTPException(status_code=404, detail="Module not found")
 
 @app.post("/api/modules/{resource}")
-def create_module_record(resource: str, payload: RecordCreate, _: str = Depends(_verify)):
+def create_module_record(resource: str, payload: RecordCreate, email: str = Depends(_verify)):
+    _require_resource_write(email, resource)
     try:
         return {"item": storage.create_record(resource, payload.data)}
     except KeyError:
