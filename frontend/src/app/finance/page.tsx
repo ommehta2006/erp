@@ -112,7 +112,7 @@ export default function FinancePage() {
             <p className="text-sm text-slate-500">Generate draft payroll from salary assignments, attendance, leave, and approved adjustments.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href="/departments/finance?module=payroll_adjustments" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:border-teal-600">Adjustments</Link>
+            <Link href="/finance/adjustments" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:border-teal-600">Adjustments</Link>
             <Link href="/departments/finance?module=payroll_runs" className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">Payroll Runs</Link>
           </div>
         </div>
@@ -222,7 +222,7 @@ export default function FinancePage() {
               <h2 className="font-semibold">Pending Adjustments</h2>
               <div className="mt-3 space-y-2">
                 {(dashboard?.adjustments || []).filter((item) => ["Open", "Pending", "Pending Approval", "Draft"].includes(item.status)).slice(0, 5).map((item) => (
-                  <Link key={item.id} href="/departments/finance?module=payroll_adjustments" className="block rounded-lg border border-amber-100 bg-amber-50 p-3">
+                  <Link key={item.id} href="/finance/adjustments" className="block rounded-lg border border-amber-100 bg-amber-50 p-3">
                     <div className="text-sm font-semibold">{item.data.employee_code || "Employee"}</div>
                     <div className="mt-1 text-xs text-amber-800">{item.data.adjustment_type} - {currency(item.data.amount)}</div>
                   </Link>

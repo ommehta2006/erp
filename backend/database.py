@@ -142,7 +142,7 @@ EXPERT_HR_MODULES = {
     "payroll_periods": ["period_id", "period_name", "start_date", "end_date", "company", "branch", "attendance_close_status", "payroll_status", "status"],
     "payroll_employee_results": ["result_id", "payroll_run", "employee_code", "paid_days", "present_days", "paid_leave_days", "unpaid_leave_days", "gross_pay", "deductions", "net_pay", "validation_status", "status"],
     "payroll_calculation_lines": ["line_id", "result_id", "component_name", "component_type", "quantity", "rate", "amount", "formula", "source", "status"],
-    "payroll_adjustments": ["adjustment_id", "employee_code", "payroll_month", "adjustment_type", "addition_or_deduction", "amount", "calculation_method", "quantity", "rate", "reason", "policy_reference", "requested_by", "approval_status", "approved_by", "approval_remarks", "payroll_inclusion_status", "status"],
+    "payroll_adjustments": ["adjustment_id", "employee_code", "payroll_month", "adjustment_type", "addition_or_deduction", "amount", "calculation_method", "quantity", "rate", "reason", "policy_reference", "supporting_attachment", "requested_by", "approval_status", "approved_by", "rejected_by", "approval_remarks", "payroll_inclusion_status", "limit_check", "duplicate_key", "reversal_of", "created_time", "updated_time", "status"],
     "payroll_approvals": ["approval_id", "payroll_run", "approver", "decision", "remarks", "decided_at", "status"],
     "payment_batches": ["batch_id", "payroll_run", "payment_date", "payment_method", "total_amount", "bank_file_reference", "payment_status", "status"],
     "notifications": ["notification_id", "recipient_employee_code", "recipient_email", "notification_type", "title", "message", "read_status", "delivery_status", "status"],

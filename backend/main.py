@@ -239,6 +239,29 @@ class PayrollGenerateRequest(BaseModel):
     department: str | None = None
     dry_run: bool = False
 
+class PayrollAdjustmentRequest(BaseModel):
+    employee_code: str
+    payroll_month: str
+    adjustment_type: str
+    addition_or_deduction: str
+    amount: float
+    calculation_method: str = "Manual"
+    quantity: float | None = None
+    rate: float | None = None
+    reason: str
+    policy_reference: str
+    supporting_attachment: str | None = None
+
+class PayrollAdjustmentDecisionRequest(BaseModel):
+    adjustment_id: str
+    decision: str
+    remarks: str | None = None
+
+class PayrollRunDecisionRequest(BaseModel):
+    run_no: str
+    decision: str
+    remarks: str | None = None
+
 class AdminUserCreateRequest(BaseModel):
     email: str
     password: str
@@ -1831,6 +1854,240 @@ def _salary_assignment_for(employee_code: str):
     assignments = _records_for_employee("employee_salary_assignments", employee_code, 100)
     return _active_record(assignments)
 
+PAYROLL_ADJUSTMENT_TYPES = {
+    "Additional Salary", "Deduction", "Bonus", "Incentive", "Reimbursement", "Arrear", "Recovery",
+    "Loan Deduction", "Advance Deduction", "Attendance Penalty", "Unpaid Leave Deduction",
+    "Holiday Adjustment", "Correction", "Tax Adjustment", "Other Approved Adjustment", "Reversal",
+}
+PAYROLL_LOCKED_STATUSES = {"Approved", "Locked", "Payment Processing", "Paid", "Partially Paid"}
+FINANCE_ADJUSTMENT_LIMIT = float(os.getenv("FINANCE_ADJUSTMENT_LIMIT", "50000"))
+
+def _payroll_period_locked(period: str) -> dict[str, Any] | None:
+    normalized = period.strip().lower()
+    for run in _items("payroll_runs", 1000):
+        data = run.get("data", {})
+        if str(data.get("period", "")).strip().lower() != normalized:
+            continue
+        status = data.get("approval_status") or run.get("status") or data.get("status")
+        if status in PAYROLL_LOCKED_STATUSES or run.get("status") in PAYROLL_LOCKED_STATUSES:
+            return run
+    return None
+
+def _find_payroll_adjustment(adjustment_id: str):
+    normalized = adjustment_id.strip().lower()
+    for item in _items("payroll_adjustments", 1000):
+        data = item.get("data", {})
+        if item.get("id", "").lower() == normalized or str(data.get("adjustment_id", "")).strip().lower() == normalized:
+            return item
+    return None
+
+def _adjustment_duplicate_key(employee_code: str, payroll_month: str, adjustment_type: str, amount: float, direction: str):
+    bits = [
+        employee_code.strip().lower(),
+        payroll_month.strip().lower(),
+        adjustment_type.strip().lower(),
+        direction.strip().lower(),
+        f"{amount:.2f}",
+    ]
+    return hashlib.sha256("|".join(bits).encode()).hexdigest()
+
+def _adjustment_dashboard():
+    rows = _items("payroll_adjustments", 1000)
+    runs = _items("payroll_runs", 250)
+    pending = [item for item in rows if (item.get("data", {}).get("approval_status") or item.get("status")) in {"Pending Approval", "Pending", "Draft", "Open"}]
+    approved = [item for item in rows if (item.get("data", {}).get("approval_status") or item.get("status")) == "Approved"]
+    rejected = [item for item in rows if (item.get("data", {}).get("approval_status") or item.get("status")) == "Rejected"]
+    reversed_rows = [item for item in rows if (item.get("data", {}).get("approval_status") or item.get("status")) == "Reversed"]
+    additions = sum(_money(item.get("data", {}).get("amount")) for item in approved if item.get("data", {}).get("addition_or_deduction") == "Addition")
+    deductions = sum(_money(item.get("data", {}).get("amount")) for item in approved if item.get("data", {}).get("addition_or_deduction") == "Deduction")
+    return {
+        "stats": {
+            "adjustments": len(rows),
+            "pending": len(pending),
+            "approved": len(approved),
+            "rejected": len(rejected),
+            "reversed": len(reversed_rows),
+            "approved_additions": round(additions, 2),
+            "approved_deductions": round(deductions, 2),
+            "net_adjustment": round(additions - deductions, 2),
+            "payroll_runs": len(runs),
+        },
+        "limit": FINANCE_ADJUSTMENT_LIMIT,
+        "pending": pending[:100],
+        "recent": rows[:100],
+        "payroll_runs": runs[:50],
+        "allowed_types": sorted(PAYROLL_ADJUSTMENT_TYPES - {"Reversal"}),
+        "allowed_directions": ["Addition", "Deduction"],
+    }
+
+def _create_payroll_adjustment(payload: PayrollAdjustmentRequest, actor: str):
+    employee_code = payload.employee_code.strip()
+    payroll_month = payload.payroll_month.strip()
+    adjustment_type = payload.adjustment_type.strip()
+    direction = payload.addition_or_deduction.strip().title()
+    reason = payload.reason.strip()
+    policy_reference = payload.policy_reference.strip()
+    amount = round(float(payload.amount), 2)
+    if not employee_code or not payroll_month:
+        raise HTTPException(status_code=422, detail="employee_code and payroll_month are required.")
+    if adjustment_type not in PAYROLL_ADJUSTMENT_TYPES - {"Reversal"}:
+        raise HTTPException(status_code=422, detail=f"adjustment_type must be one of: {', '.join(sorted(PAYROLL_ADJUSTMENT_TYPES - {'Reversal'}))}")
+    if direction not in {"Addition", "Deduction"}:
+        raise HTTPException(status_code=422, detail="addition_or_deduction must be Addition or Deduction.")
+    if amount <= 0:
+        raise HTTPException(status_code=422, detail="amount must be greater than zero.")
+    if amount > FINANCE_ADJUSTMENT_LIMIT:
+        raise HTTPException(status_code=422, detail=f"amount exceeds configured adjustment limit {FINANCE_ADJUSTMENT_LIMIT:.2f}.")
+    if len(reason) < 8:
+        raise HTTPException(status_code=422, detail="reason must explain the adjustment.")
+    if len(policy_reference) < 3:
+        raise HTTPException(status_code=422, detail="policy_reference is required for payroll audit.")
+    locked = _payroll_period_locked(payroll_month)
+    if locked:
+        raise HTTPException(status_code=409, detail=f"Payroll period {payroll_month} is locked or approved. Use reversal/supplementary process.")
+    duplicate_key = _adjustment_duplicate_key(employee_code, payroll_month, adjustment_type, amount, direction)
+    for item in _items("payroll_adjustments", 1000):
+        data = item.get("data", {})
+        if data.get("duplicate_key") == duplicate_key and (data.get("approval_status") or item.get("status")) not in {"Rejected", "Reversed", "Cancelled"}:
+            raise HTTPException(status_code=409, detail="Duplicate active adjustment found for employee, month, type, direction, and amount.")
+    now = _now_iso()
+    item = storage.create_record("payroll_adjustments", {
+        "adjustment_id": _new_ref("PADJ"),
+        "employee_code": employee_code,
+        "payroll_month": payroll_month,
+        "adjustment_type": adjustment_type,
+        "addition_or_deduction": direction,
+        "amount": f"{amount:.2f}",
+        "calculation_method": payload.calculation_method.strip() or "Manual",
+        "quantity": f"{payload.quantity:.2f}" if payload.quantity is not None else "1.00",
+        "rate": f"{payload.rate:.2f}" if payload.rate is not None else f"{amount:.2f}",
+        "reason": reason,
+        "policy_reference": policy_reference,
+        "supporting_attachment": _clean_text(payload.supporting_attachment),
+        "requested_by": actor,
+        "approval_status": "Pending Approval",
+        "approved_by": "",
+        "rejected_by": "",
+        "approval_remarks": "",
+        "payroll_inclusion_status": "Pending Approval",
+        "limit_check": f"within_limit:{FINANCE_ADJUSTMENT_LIMIT:.2f}",
+        "duplicate_key": duplicate_key,
+        "reversal_of": "",
+        "created_time": now,
+        "updated_time": now,
+        "status": "Pending Approval",
+    })
+    _write_audit(actor, "create_payroll_adjustment", "payroll_adjustments", item.get("data", {}).get("adjustment_id", item.get("id", "")), item.get("data", {}), reason)
+    _notify_employee(employee_code, "salary_adjustment_added", "Salary adjustment submitted", f"{adjustment_type} {direction.lower()} of {amount:.2f} is pending finance approval.", employee_code)
+    return {"item": item, "dashboard": _adjustment_dashboard()}
+
+def _decide_payroll_adjustment(payload: PayrollAdjustmentDecisionRequest, actor: str):
+    item = _find_payroll_adjustment(payload.adjustment_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Payroll adjustment not found.")
+    data = item.get("data", {})
+    decision = payload.decision.strip().title()
+    remarks = (payload.remarks or "").strip()
+    current_status = data.get("approval_status") or item.get("status")
+    if current_status in {"Reversed", "Cancelled"}:
+        raise HTTPException(status_code=409, detail=f"Adjustment is already {current_status}.")
+    if _payroll_period_locked(data.get("payroll_month", "")) and decision != "Reversed":
+        raise HTTPException(status_code=409, detail="Payroll period is locked. Use reversal for corrections.")
+    if decision not in {"Approved", "Rejected", "Reversed"}:
+        raise HTTPException(status_code=422, detail="decision must be Approved, Rejected, or Reversed.")
+    update_payload = {
+        "approval_status": decision,
+        "approval_remarks": remarks or decision,
+        "updated_time": _now_iso(),
+        "status": decision,
+    }
+    if decision == "Approved":
+        if current_status == "Approved":
+            raise HTTPException(status_code=409, detail="Adjustment is already approved.")
+        update_payload["approved_by"] = actor
+        update_payload["payroll_inclusion_status"] = "Included In Next Payroll"
+        notification_type = "salary_adjustment_approved"
+    elif decision == "Rejected":
+        update_payload["rejected_by"] = actor
+        update_payload["payroll_inclusion_status"] = "Rejected"
+        notification_type = "salary_adjustment_rejected"
+    else:
+        if current_status != "Approved":
+            raise HTTPException(status_code=409, detail="Only approved adjustments can be reversed.")
+        reversed_direction = "Deduction" if data.get("addition_or_deduction") == "Addition" else "Addition"
+        reversal = storage.create_record("payroll_adjustments", {
+            "adjustment_id": _new_ref("PADJ"),
+            "employee_code": data.get("employee_code", ""),
+            "payroll_month": data.get("payroll_month", ""),
+            "adjustment_type": "Reversal",
+            "addition_or_deduction": reversed_direction,
+            "amount": data.get("amount", "0"),
+            "calculation_method": "Reversal",
+            "quantity": data.get("quantity", "1"),
+            "rate": data.get("rate", data.get("amount", "0")),
+            "reason": f"Reversal of {data.get('adjustment_id', item.get('id', ''))}. {remarks}",
+            "policy_reference": data.get("policy_reference", ""),
+            "supporting_attachment": data.get("supporting_attachment", ""),
+            "requested_by": actor,
+            "approval_status": "Approved",
+            "approved_by": actor,
+            "rejected_by": "",
+            "approval_remarks": remarks or "Reversal approved",
+            "payroll_inclusion_status": "Included In Next Payroll",
+            "limit_check": data.get("limit_check", ""),
+            "duplicate_key": _adjustment_duplicate_key(data.get("employee_code", ""), data.get("payroll_month", ""), "Reversal", _money(data.get("amount")), reversed_direction),
+            "reversal_of": data.get("adjustment_id", item.get("id", "")),
+            "created_time": _now_iso(),
+            "updated_time": _now_iso(),
+            "status": "Approved",
+        })
+        update_payload["payroll_inclusion_status"] = "Reversed"
+        update_payload["reversal_of"] = reversal.get("data", {}).get("adjustment_id", reversal.get("id", ""))
+        notification_type = "salary_adjustment_reversed"
+    updated = storage.update_record("payroll_adjustments", item.get("id", ""), update_payload)
+    storage.create_record("payroll_approvals", {
+        "approval_id": _new_ref("PAPP"),
+        "payroll_run": data.get("payroll_month", ""),
+        "approver": actor,
+        "decision": decision,
+        "remarks": remarks,
+        "decided_at": _now_iso(),
+        "status": decision,
+    })
+    _write_audit(actor, f"{decision.lower()}_payroll_adjustment", "payroll_adjustments", data.get("adjustment_id", item.get("id", "")), updated.get("data", {}), remarks or decision)
+    _notify_employee(data.get("employee_code", ""), notification_type, f"Salary adjustment {decision.lower()}", remarks or f"Your {data.get('adjustment_type', 'payroll adjustment')} was {decision.lower()}.", data.get("employee_code", ""))
+    return {"item": updated, "dashboard": _adjustment_dashboard()}
+
+def _decide_payroll_run(payload: PayrollRunDecisionRequest, actor: str):
+    normalized = payload.run_no.strip().lower()
+    run = next(
+        (
+            item for item in _items("payroll_runs", 1000)
+            if item.get("id", "").lower() == normalized or item.get("data", {}).get("run_no", "").strip().lower() == normalized
+        ),
+        None,
+    )
+    if not run:
+        raise HTTPException(status_code=404, detail="Payroll run not found.")
+    decision = payload.decision.strip().title()
+    if decision not in {"Approved", "Locked", "Payment Processing", "Paid", "Cancelled", "Reversed"}:
+        raise HTTPException(status_code=422, detail="decision must be Approved, Locked, Payment Processing, Paid, Cancelled, or Reversed.")
+    updated = storage.update_record("payroll_runs", run.get("id", ""), {
+        "approval_status": decision,
+        "status": decision,
+    })
+    storage.create_record("payroll_approvals", {
+        "approval_id": _new_ref("PAPP"),
+        "payroll_run": run.get("data", {}).get("run_no", run.get("id", "")),
+        "approver": actor,
+        "decision": decision,
+        "remarks": payload.remarks or "",
+        "decided_at": _now_iso(),
+        "status": decision,
+    })
+    _write_audit(actor, f"{decision.lower().replace(' ', '_')}_payroll_run", "payroll_runs", run.get("data", {}).get("run_no", run.get("id", "")), updated.get("data", {}), payload.remarks or decision)
+    return {"item": updated, "dashboard": v1_finance_payroll_dashboard(actor)}
+
 def _payroll_calculation(payload: PayrollGenerateRequest, actor: str):
     start = _parse_iso_date(payload.start_date, "start_date")
     end = _parse_iso_date(payload.end_date, "end_date")
@@ -2878,6 +3135,26 @@ def v1_finance_payroll_dashboard(email: str = Depends(_verify)):
         "employee_results": results[:20],
         "adjustments": adjustments[:20],
     }
+
+@app.get("/api/v1/finance/adjustments-dashboard")
+def v1_finance_adjustments_dashboard(email: str = Depends(_verify)):
+    _require_permission(email, "finance:read")
+    return _adjustment_dashboard()
+
+@app.post("/api/v1/finance/payroll-adjustments")
+def v1_create_payroll_adjustment(payload: PayrollAdjustmentRequest, email: str = Depends(_verify)):
+    _require_permission(email, "finance:write")
+    return _create_payroll_adjustment(payload, email)
+
+@app.post("/api/v1/finance/payroll-adjustments/decision")
+def v1_decide_payroll_adjustment(payload: PayrollAdjustmentDecisionRequest, email: str = Depends(_verify)):
+    _require_permission(email, "finance:write")
+    return _decide_payroll_adjustment(payload, email)
+
+@app.post("/api/v1/finance/payroll-runs/decision")
+def v1_decide_payroll_run(payload: PayrollRunDecisionRequest, email: str = Depends(_verify)):
+    _require_permission(email, "finance:write")
+    return _decide_payroll_run(payload, email)
 
 @app.post("/api/v1/payroll/generate")
 def v1_generate_payroll(payload: PayrollGenerateRequest, email: str = Depends(_verify)):
