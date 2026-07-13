@@ -103,6 +103,73 @@ MODULE_FIELDS = {
     "risk_register": ["risk_no", "project_code", "risk", "impact", "mitigation_owner", "due_date", "status"],
 }
 
+EXPERT_HR_MODULES = {
+    "companies": ["company_code", "name", "country", "tax_id", "status"],
+    "branches": ["branch_code", "company", "name", "city", "state", "status"],
+    "designations": ["designation_code", "department", "title", "grade", "status"],
+    "employee_private_details": ["employee_code", "date_of_birth", "gender", "nationality", "tax_identifier_ref", "status"],
+    "employee_bank_details": ["employee_code", "bank_name", "account_last4", "ifsc_or_routing", "verification_status", "status"],
+    "employee_documents": ["employee_code", "document_type", "document_no_masked", "expiry_date", "verification_status", "status"],
+    "employee_emergency_contacts": ["employee_code", "contact_name", "relationship", "phone", "address", "status"],
+    "employee_lifecycle_events": ["event_no", "employee_code", "event_type", "effective_date", "previous_value", "new_value", "reason", "approved_by", "status"],
+    "work_locations": ["location_id", "company", "branch", "location_name", "location_type", "full_address", "city", "state", "country", "latitude", "longitude", "geofence_type", "geofence_radius_meters", "allowed_gps_accuracy_meters", "time_zone", "approval_status", "status"],
+    "geofences": ["geofence_id", "location_id", "geofence_type", "center_latitude", "center_longitude", "radius_meters", "polygon_coordinates", "allowed_accuracy_meters", "boundary_version", "effective_start_date", "effective_end_date", "approval_status", "status"],
+    "geofence_versions": ["version_id", "geofence_id", "boundary_version", "change_summary", "changed_by", "approved_by", "effective_date", "status"],
+    "geofence_polygon_points": ["point_id", "geofence_id", "boundary_version", "point_order", "latitude", "longitude", "status"],
+    "employee_location_assignments": ["assignment_id", "employee_code", "location_id", "shift", "effective_start_date", "effective_end_date", "assignment_type", "approval_status", "status"],
+    "employee_shift_assignments": ["assignment_id", "employee_code", "shift", "effective_start_date", "effective_end_date", "approval_status", "status"],
+    "shift_rosters": ["roster_id", "employee_code", "shift", "roster_date", "location_id", "status"],
+    "attendance_records": ["attendance_record_id", "employee_code", "employee_name", "department", "designation", "company", "branch", "work_location", "shift", "attendance_date", "day_in_time", "day_out_time", "day_in_latitude", "day_in_longitude", "day_out_latitude", "day_out_longitude", "day_in_accuracy", "day_out_accuracy", "day_in_distance", "day_out_distance", "day_in_geofence_status", "day_out_geofence_status", "day_in_biometric_result", "day_out_biometric_result", "late_duration_minutes", "early_exit_minutes", "gross_work_minutes", "net_work_minutes", "overtime_minutes", "attendance_status", "payroll_status", "approval_status", "employee_remarks", "hr_remarks", "source", "status"],
+    "attendance_location_events": ["event_id", "attendance_record_id", "employee_code", "event_type", "latitude", "longitude", "accuracy", "altitude", "speed", "provider", "captured_at", "received_at", "device_time", "server_time", "geofence_id", "geofence_version", "distance_meters", "inside_fence", "tolerance_applied", "mock_location_indicator", "risk_score", "validation_result", "failure_reason", "device_id", "ip_address", "app_version", "status"],
+    "attendance_biometric_events": ["event_id", "attendance_record_id", "employee_code", "event_type", "verification_method", "verification_result", "assertion_reference", "trusted_device_id", "failure_reason", "risk_flags", "verified_at", "status"],
+    "attendance_validation_results": ["validation_id", "employee_code", "event_type", "location_id", "geofence_id", "employee_latitude", "employee_longitude", "geofence_latitude", "geofence_longitude", "distance_meters", "radius_meters", "inside_fence", "accuracy_meters", "allowed_accuracy_meters", "geofence_status", "validation_reason", "risk_flags", "server_validated_at", "status"],
+    "attendance_correction_requests": ["request_id", "employee_code", "attendance_date", "requested_day_in_time", "requested_day_out_time", "reason", "current_record", "requested_changes", "manager_approval", "hr_approval", "final_status", "status"],
+    "attendance_approvals": ["approval_id", "attendance_record_id", "employee_code", "approval_type", "approver", "decision", "comments", "decided_at", "status"],
+    "device_registrations": ["device_id", "employee_code", "platform", "device_name", "app_version", "restricted_device", "registered_at", "approval_status", "status"],
+    "device_integrity_events": ["event_id", "employee_code", "device_id", "signal_type", "risk_score", "risk_flags", "observed_at", "status"],
+    "leave_types": ["leave_type", "paid_status", "requires_attachment", "allow_half_day", "allow_hourly", "status"],
+    "leave_policies": ["policy_name", "leave_type", "accrual_rule", "carry_forward_rule", "negative_balance_allowed", "approval_levels", "payroll_impact", "status"],
+    "leave_allocations": ["allocation_id", "employee_code", "leave_type", "period", "allocated_days", "used_days", "available_days", "expiry_date", "status"],
+    "leave_applications": ["application_id", "employee_code", "leave_type", "start_date", "end_date", "half_day", "total_leave_days", "reason", "approver", "approval_status", "payroll_impact", "status"],
+    "leave_approvals": ["approval_id", "application_id", "approver", "decision", "remarks", "decided_at", "status"],
+    "holiday_calendars": ["calendar_id", "company", "country", "state", "branch", "location_id", "effective_year", "status"],
+    "holidays": ["holiday_id", "calendar_id", "holiday_name", "holiday_date", "holiday_type", "paid_status", "optional_or_mandatory", "payroll_impact", "notes", "status"],
+    "salary_structures": ["structure_id", "structure_name", "currency", "payment_frequency", "proration_method", "approval_status", "status"],
+    "salary_structure_components": ["component_id", "structure_id", "component_name", "component_type", "calculation_method", "amount", "taxable", "status"],
+    "employee_salary_assignments": ["assignment_id", "employee_code", "structure_id", "effective_date", "gross_salary", "ctc", "approval_status", "status"],
+    "salary_revision_history": ["revision_id", "employee_code", "structure_id", "effective_date", "basic_salary", "allowances", "deductions", "gross_salary", "ctc", "net_salary_estimate", "revision_type", "previous_salary", "new_salary", "increase_amount", "increase_percent", "reason", "approved_by", "status"],
+    "payroll_periods": ["period_id", "period_name", "start_date", "end_date", "company", "branch", "attendance_close_status", "payroll_status", "status"],
+    "payroll_employee_results": ["result_id", "payroll_run", "employee_code", "paid_days", "present_days", "paid_leave_days", "unpaid_leave_days", "gross_pay", "deductions", "net_pay", "validation_status", "status"],
+    "payroll_calculation_lines": ["line_id", "result_id", "component_name", "component_type", "quantity", "rate", "amount", "formula", "source", "status"],
+    "payroll_adjustments": ["adjustment_id", "employee_code", "payroll_month", "adjustment_type", "addition_or_deduction", "amount", "calculation_method", "quantity", "rate", "reason", "policy_reference", "requested_by", "approval_status", "approved_by", "approval_remarks", "payroll_inclusion_status", "status"],
+    "payroll_approvals": ["approval_id", "payroll_run", "approver", "decision", "remarks", "decided_at", "status"],
+    "payment_batches": ["batch_id", "payroll_run", "payment_date", "payment_method", "total_amount", "bank_file_reference", "payment_status", "status"],
+    "notifications": ["notification_id", "recipient_employee_code", "recipient_email", "notification_type", "title", "message", "read_status", "delivery_status", "status"],
+    "attachments": ["attachment_id", "entity_type", "entity_id", "file_name", "storage_path", "content_type", "uploaded_by", "status"],
+    "audit_logs": ["audit_id", "actor", "action", "entity_type", "entity_id", "previous_values", "new_values", "reason", "ip_address", "device_info", "approval_reference", "status"],
+}
+
+MODULE_FIELDS.update(EXPERT_HR_MODULES)
+DEPARTMENTS["hr"]["modules"] = [
+    "employees", "employee_private_details", "employee_bank_details", "employee_documents", "employee_emergency_contacts",
+    "employee_lifecycle_events", "work_locations", "geofences", "geofence_versions", "geofence_polygon_points",
+    "employee_location_assignments", "employee_shift_assignments", "shifts", "shift_rosters", "attendance_policies",
+    "attendance_records", "attendance_location_events", "attendance_biometric_events", "attendance_validation_results",
+    "attendance_correction_requests", "attendance_approvals", "leave_types", "leave_policies", "leave_allocations",
+    "leave_balances", "leave_applications", "leave_approvals", "leave_requests", "holiday_calendars", "holidays",
+    "holiday_calendar", "salary_structures", "employee_salary_assignments", "salary_revision_history", "salary_slips",
+    "departments", "designations", "performance_reviews", "training_records", "recruitment", "visitor_passes",
+]
+DEPARTMENTS["finance"]["modules"] = [
+    "payroll_periods", "payroll_runs", "payroll_employee_results", "payroll_calculation_lines", "payroll_adjustments",
+    "payroll_approvals", "payment_batches", "salary_structures", "salary_structure_components", "salary_slips",
+    "invoices", "purchase_orders", "sales_orders", "budgets", "tax_records", "farmer_payments", "expense_claims", "approvals",
+]
+DEPARTMENTS["admin"]["modules"] = [
+    "approvals", "notifications", "attachments", "audit_logs", "documents", "tasks", "support_tickets",
+    "device_registrations", "device_integrity_events", "incidents",
+]
+
 MODULE_DESCRIPTIONS = {
     "security": "Gate, visitor, contractor, patrol, and incident controls.",
     "environment": "Effluent, emissions, water, waste, and sustainability KPIs.",
@@ -115,7 +182,11 @@ REQUIRED_FIELDS = {
     for resource, fields in MODULE_FIELDS.items()
 }
 
-STATUS_VALUES = {"Open", "Active", "Pending", "Approved", "Rejected", "Completed", "Closed", "On Hold", "Critical"}
+STATUS_VALUES = {
+    "Open", "Active", "Inactive", "Pending", "Approved", "Rejected", "Completed", "Closed", "On Hold", "Critical",
+    "Draft", "Locked", "Paid", "Cancelled", "Reversed", "Present", "Absent", "Half Day", "Late", "Early Exit",
+    "Overtime", "Out of Fence", "Pending Approval", "Attendance Corrected", "Failed", "Passed",
+}
 NUMERIC_FIELD_WORDS = {
     "accuracy",
     "acres",
@@ -131,10 +202,12 @@ NUMERIC_FIELD_WORDS = {
     "capacity",
     "cod",
     "deductions",
+    "distance",
     "export",
     "feed",
     "generation",
     "gross",
+    "hours",
     "intensity",
     "kl",
     "kwh",
@@ -155,11 +228,13 @@ NUMERIC_FIELD_WORDS = {
     "pressure",
     "purity",
     "quantity",
+    "radius",
     "rate",
     "reading",
     "recovery",
     "score",
     "spent",
+    "speed",
     "tare",
     "ton",
     "tonnage",

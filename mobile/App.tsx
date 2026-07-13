@@ -38,6 +38,8 @@ type EmployeeSummary = {
   employee_code: string;
   attendance: { checked_in: boolean; date: string; day_in_time: string; day_out_time: string; late_mark: boolean; late_after_time: string; records_today: number };
   attendance_policy: Record<string, string>;
+  assignment: Record<string, string> | null;
+  work_location: Record<string, string> | null;
   calendar: AttendanceCalendar;
   leave: { pending: number; approved: number; balances: Record<string, string>[] };
   salary: { latest: Record<string, string> | null; count: number };
@@ -383,6 +385,7 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
           <TimeTile label="Late" value={data?.attendance.late_mark ? "Yes" : "No"} tone={data?.attendance.late_mark ? "red" : "green"} />
         </View>
         <Text style={styles.policyText}>Late after {data?.attendance.late_after_time || data?.attendance_policy?.late_after_time || "HR policy"} - tracking every {trackingInterval} min</Text>
+        <Text style={styles.policyText}>Location: {data?.work_location?.location_name || "No active HR geofence assignment"}</Text>
         <View style={styles.actionRow}>
           <Pressable style={[styles.lightButton, busy && styles.disabledButton]} disabled={busy} onPress={() => attendanceAction("day-in")}>
             <Text style={styles.lightButtonText}>Thumb Day In</Text>

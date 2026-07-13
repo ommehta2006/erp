@@ -1,819 +1,1560 @@
 {
   "components": {
-    "securitySchemes": {
-      "bearerAuth": {
-        "scheme": "bearer",
-        "type": "http"
+    "schemas": {
+      "BiometricVerificationRequest": {
+        "properties": {
+          "assertion_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assertion Reference"
+          },
+          "attendance_record_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attendance Record Id"
+          },
+          "event_type": {
+            "default": "day_in",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
+          },
+          "risk_flags": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Flags"
+          },
+          "trusted_device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trusted Device Id"
+          },
+          "verification_method": {
+            "title": "Verification Method",
+            "type": "string"
+          },
+          "verification_result": {
+            "title": "Verification Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verification_method",
+          "verification_result"
+        ],
+        "title": "BiometricVerificationRequest",
+        "type": "object"
+      },
+      "EmployeeAttendanceEvent": {
+        "properties": {
+          "accuracy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accuracy"
+          },
+          "employee_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee Code"
+          },
+          "latitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latitude"
+          },
+          "longitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Longitude"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "shift": {
+            "default": "General",
+            "title": "Shift",
+            "type": "string"
+          }
+        },
+        "title": "EmployeeAttendanceEvent",
+        "type": "object"
+      },
+      "EmployeeLocationPing": {
+        "properties": {
+          "accuracy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accuracy"
+          },
+          "employee_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee Code"
+          },
+          "event": {
+            "default": "tracking",
+            "title": "Event",
+            "type": "string"
+          },
+          "latitude": {
+            "title": "Latitude",
+            "type": "number"
+          },
+          "longitude": {
+            "title": "Longitude",
+            "type": "number"
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude"
+        ],
+        "title": "EmployeeLocationPing",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LeaveApplyRequest": {
+        "properties": {
+          "employee_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee Code"
+          },
+          "from_date": {
+            "title": "From Date",
+            "type": "string"
+          },
+          "leave_type": {
+            "title": "Leave Type",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "to_date": {
+            "title": "To Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "leave_type",
+          "from_date",
+          "to_date",
+          "reason"
+        ],
+        "title": "LeaveApplyRequest",
+        "type": "object"
+      },
+      "LocationValidationRequest": {
+        "properties": {
+          "accuracy": {
+            "title": "Accuracy",
+            "type": "number"
+          },
+          "altitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Altitude"
+          },
+          "app_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Version"
+          },
+          "captured_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured At"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          },
+          "device_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Time"
+          },
+          "event_type": {
+            "default": "day_in",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "latitude": {
+            "title": "Latitude",
+            "type": "number"
+          },
+          "longitude": {
+            "title": "Longitude",
+            "type": "number"
+          },
+          "mock_location_indicator": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mock Location Indicator"
+          },
+          "provider": {
+            "default": "device_gps",
+            "title": "Provider",
+            "type": "string"
+          },
+          "speed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speed"
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude",
+          "accuracy"
+        ],
+        "title": "LocationValidationRequest",
+        "type": "object"
+      },
+      "LoginRequest": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "RecordCreate": {
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "RecordCreate",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
       }
     }
   },
   "info": {
-    "title": "FactoryPulse ERP API",
-    "version": "0.4.0-reference"
+    "title": "FactoryPulse Global ERP API",
+    "version": "0.5.0"
   },
   "openapi": "3.1.0",
   "paths": {
-    "/api/admin/settings": {
+    "/": {
       "get": {
-        "summary": "Tenant/runtime settings summary"
-      }
-    },
-    "/api/admin/users": {
-      "get": {
-        "summary": "List tenant users"
-      },
-      "post": {
-        "summary": "Create tenant user"
-      }
-    },
-    "/api/approvals": {
-      "get": {
-        "summary": "List approvals"
-      },
-      "post": {
-        "summary": "Create approvals"
-      }
-    },
-    "/api/approvals/{id}": {
-      "get": {
-        "summary": "Read approvals"
-      },
-      "patch": {
-        "summary": "Update approvals"
-      }
-    },
-    "/api/assets": {
-      "get": {
-        "summary": "List assets"
-      },
-      "post": {
-        "summary": "Create assets"
-      }
-    },
-    "/api/assets/{id}": {
-      "get": {
-        "summary": "Read assets"
-      },
-      "patch": {
-        "summary": "Update assets"
-      }
-    },
-    "/api/attendance": {
-      "get": {
-        "summary": "List attendance"
-      },
-      "post": {
-        "summary": "Create attendance"
-      }
-    },
-    "/api/attendance/{id}": {
-      "get": {
-        "summary": "Read attendance"
-      },
-      "patch": {
-        "summary": "Update attendance"
-      }
-    },
-    "/api/audit-events": {
-      "get": {
-        "summary": "Tenant audit events"
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Root"
       }
     },
     "/api/auth/login": {
       "post": {
-        "summary": "Password login"
-      }
-    },
-    "/api/boiler_logs": {
-      "get": {
-        "summary": "List boiler_logs"
-      },
-      "post": {
-        "summary": "Create boiler_logs"
-      }
-    },
-    "/api/boiler_logs/{id}": {
-      "get": {
-        "summary": "Read boiler_logs"
-      },
-      "patch": {
-        "summary": "Update boiler_logs"
-      }
-    },
-    "/api/byproducts": {
-      "get": {
-        "summary": "List byproducts"
-      },
-      "post": {
-        "summary": "Create byproducts"
-      }
-    },
-    "/api/byproducts/{id}": {
-      "get": {
-        "summary": "Read byproducts"
-      },
-      "patch": {
-        "summary": "Update byproducts"
-      }
-    },
-    "/api/cane_registrations": {
-      "get": {
-        "summary": "List cane_registrations"
-      },
-      "post": {
-        "summary": "Create cane_registrations"
-      }
-    },
-    "/api/cane_registrations/{id}": {
-      "get": {
-        "summary": "Read cane_registrations"
-      },
-      "patch": {
-        "summary": "Update cane_registrations"
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login"
       }
     },
     "/api/catalog": {
       "get": {
-        "summary": "Visible module catalog"
+        "operationId": "catalog_api_catalog_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Catalog"
       }
     },
     "/api/dashboard": {
       "get": {
-        "summary": "Role-filtered executive dashboard"
+        "operationId": "dashboard_api_dashboard_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dashboard"
       }
     },
     "/api/departments": {
       "get": {
-        "summary": "List departments"
-      },
-      "post": {
-        "summary": "Create departments"
+        "operationId": "departments_api_departments_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Departments"
       }
     },
-    "/api/departments/{id}": {
+    "/api/departments/{department_id}": {
       "get": {
-        "summary": "Read departments"
-      },
-      "patch": {
-        "summary": "Update departments"
+        "operationId": "department_api_departments__department_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "department_id",
+            "required": true,
+            "schema": {
+              "title": "Department Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Department"
       }
     },
-    "/api/dispatches": {
+    "/api/finance/invoices": {
       "get": {
-        "summary": "List dispatches"
-      },
-      "post": {
-        "summary": "Create dispatches"
-      }
-    },
-    "/api/dispatches/{id}": {
-      "get": {
-        "summary": "Read dispatches"
-      },
-      "patch": {
-        "summary": "Update dispatches"
-      }
-    },
-    "/api/distillery_batches": {
-      "get": {
-        "summary": "List distillery_batches"
-      },
-      "post": {
-        "summary": "Create distillery_batches"
-      }
-    },
-    "/api/distillery_batches/{id}": {
-      "get": {
-        "summary": "Read distillery_batches"
-      },
-      "patch": {
-        "summary": "Update distillery_batches"
-      }
-    },
-    "/api/documents": {
-      "get": {
-        "summary": "List documents"
-      },
-      "post": {
-        "summary": "Create documents"
-      }
-    },
-    "/api/documents/{id}": {
-      "get": {
-        "summary": "Read documents"
-      },
-      "patch": {
-        "summary": "Update documents"
-      }
-    },
-    "/api/employees": {
-      "get": {
-        "summary": "List employees"
-      },
-      "post": {
-        "summary": "Create employees"
-      }
-    },
-    "/api/employees/{id}": {
-      "get": {
-        "summary": "Read employees"
-      },
-      "patch": {
-        "summary": "Update employees"
-      }
-    },
-    "/api/ethanol_dispatches": {
-      "get": {
-        "summary": "List ethanol_dispatches"
-      },
-      "post": {
-        "summary": "Create ethanol_dispatches"
-      }
-    },
-    "/api/ethanol_dispatches/{id}": {
-      "get": {
-        "summary": "Read ethanol_dispatches"
-      },
-      "patch": {
-        "summary": "Update ethanol_dispatches"
-      }
-    },
-    "/api/export/approvals.csv": {
-      "get": {
-        "summary": "Export approvals as CSV"
-      }
-    },
-    "/api/export/assets.csv": {
-      "get": {
-        "summary": "Export assets as CSV"
-      }
-    },
-    "/api/export/attendance.csv": {
-      "get": {
-        "summary": "Export attendance as CSV"
-      }
-    },
-    "/api/export/boiler_logs.csv": {
-      "get": {
-        "summary": "Export boiler_logs as CSV"
-      }
-    },
-    "/api/export/byproducts.csv": {
-      "get": {
-        "summary": "Export byproducts as CSV"
-      }
-    },
-    "/api/export/cane_registrations.csv": {
-      "get": {
-        "summary": "Export cane_registrations as CSV"
-      }
-    },
-    "/api/export/departments.csv": {
-      "get": {
-        "summary": "Export departments as CSV"
-      }
-    },
-    "/api/export/dispatches.csv": {
-      "get": {
-        "summary": "Export dispatches as CSV"
-      }
-    },
-    "/api/export/distillery_batches.csv": {
-      "get": {
-        "summary": "Export distillery_batches as CSV"
-      }
-    },
-    "/api/export/documents.csv": {
-      "get": {
-        "summary": "Export documents as CSV"
-      }
-    },
-    "/api/export/employees.csv": {
-      "get": {
-        "summary": "Export employees as CSV"
-      }
-    },
-    "/api/export/ethanol_dispatches.csv": {
-      "get": {
-        "summary": "Export ethanol_dispatches as CSV"
-      }
-    },
-    "/api/export/farmers.csv": {
-      "get": {
-        "summary": "Export farmers as CSV"
-      }
-    },
-    "/api/export/harvest_plans.csv": {
-      "get": {
-        "summary": "Export harvest_plans as CSV"
-      }
-    },
-    "/api/export/incidents.csv": {
-      "get": {
-        "summary": "Export incidents as CSV"
-      }
-    },
-    "/api/export/inventory_items.csv": {
-      "get": {
-        "summary": "Export inventory_items as CSV"
-      }
-    },
-    "/api/export/invoices.csv": {
-      "get": {
-        "summary": "Export invoices as CSV"
-      }
-    },
-    "/api/export/leave_requests.csv": {
-      "get": {
-        "summary": "Export leave_requests as CSV"
-      }
-    },
-    "/api/export/maintenance_work_orders.csv": {
-      "get": {
-        "summary": "Export maintenance_work_orders as CSV"
-      }
-    },
-    "/api/export/packaging_runs.csv": {
-      "get": {
-        "summary": "Export packaging_runs as CSV"
-      }
-    },
-    "/api/export/payroll_runs.csv": {
-      "get": {
-        "summary": "Export payroll_runs as CSV"
-      }
-    },
-    "/api/export/power_generation.csv": {
-      "get": {
-        "summary": "Export power_generation as CSV"
-      }
-    },
-    "/api/export/production_batches.csv": {
-      "get": {
-        "summary": "Export production_batches as CSV"
-      }
-    },
-    "/api/export/purchase_orders.csv": {
-      "get": {
-        "summary": "Export purchase_orders as CSV"
-      }
-    },
-    "/api/export/quality_tests.csv": {
-      "get": {
-        "summary": "Export quality_tests as CSV"
-      }
-    },
-    "/api/export/sales_orders.csv": {
-      "get": {
-        "summary": "Export sales_orders as CSV"
-      }
-    },
-    "/api/export/shifts.csv": {
-      "get": {
-        "summary": "Export shifts as CSV"
-      }
-    },
-    "/api/export/support_tickets.csv": {
-      "get": {
-        "summary": "Export support_tickets as CSV"
-      }
-    },
-    "/api/export/tasks.csv": {
-      "get": {
-        "summary": "Export tasks as CSV"
-      }
-    },
-    "/api/export/training_records.csv": {
-      "get": {
-        "summary": "Export training_records as CSV"
-      }
-    },
-    "/api/export/vehicles.csv": {
-      "get": {
-        "summary": "Export vehicles as CSV"
-      }
-    },
-    "/api/export/visitor_passes.csv": {
-      "get": {
-        "summary": "Export visitor_passes as CSV"
-      }
-    },
-    "/api/export/warehouses.csv": {
-      "get": {
-        "summary": "Export warehouses as CSV"
-      }
-    },
-    "/api/export/weighbridge_tickets.csv": {
-      "get": {
-        "summary": "Export weighbridge_tickets as CSV"
-      }
-    },
-    "/api/farmers": {
-      "get": {
-        "summary": "List farmers"
-      },
-      "post": {
-        "summary": "Create farmers"
-      }
-    },
-    "/api/farmers/{id}": {
-      "get": {
-        "summary": "Read farmers"
-      },
-      "patch": {
-        "summary": "Update farmers"
-      }
-    },
-    "/api/harvest_plans": {
-      "get": {
-        "summary": "List harvest_plans"
-      },
-      "post": {
-        "summary": "Create harvest_plans"
-      }
-    },
-    "/api/harvest_plans/{id}": {
-      "get": {
-        "summary": "Read harvest_plans"
-      },
-      "patch": {
-        "summary": "Update harvest_plans"
+        "operationId": "finance_invoices_api_finance_invoices_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Finance Invoices"
       }
     },
     "/api/health": {
       "get": {
-        "summary": "Service health"
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
       }
     },
-    "/api/incidents": {
+    "/api/hr/employees": {
       "get": {
-        "summary": "List incidents"
+        "operationId": "hr_employees_api_hr_employees_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Hr Employees"
+      }
+    },
+    "/api/mobile/employee/attendance-policy": {
+      "get": {
+        "operationId": "employee_attendance_policy_api_mobile_employee_attendance_policy_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Employee Attendance Policy"
+      }
+    },
+    "/api/mobile/employee/calendar": {
+      "get": {
+        "operationId": "employee_calendar_api_mobile_employee_calendar_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Employee Calendar"
+      }
+    },
+    "/api/mobile/employee/day-in": {
+      "post": {
+        "operationId": "employee_day_in_api_mobile_employee_day_in_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmployeeAttendanceEvent"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Employee Day In"
+      }
+    },
+    "/api/mobile/employee/day-out": {
+      "post": {
+        "operationId": "employee_day_out_api_mobile_employee_day_out_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmployeeAttendanceEvent"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Employee Day Out"
+      }
+    },
+    "/api/mobile/employee/leave": {
+      "post": {
+        "operationId": "employee_leave_api_mobile_employee_leave_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaveApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Employee Leave"
+      }
+    },
+    "/api/mobile/employee/location": {
+      "post": {
+        "operationId": "employee_location_api_mobile_employee_location_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmployeeLocationPing"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Employee Location"
+      }
+    },
+    "/api/mobile/employee/salary": {
+      "get": {
+        "operationId": "employee_salary_api_mobile_employee_salary_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Employee Salary"
+      }
+    },
+    "/api/mobile/employee/summary": {
+      "get": {
+        "operationId": "employee_summary_api_mobile_employee_summary_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Employee Summary"
+      }
+    },
+    "/api/mobile/summary": {
+      "get": {
+        "operationId": "mobile_summary_api_mobile_summary_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mobile Summary"
+      }
+    },
+    "/api/modules/{resource}": {
+      "get": {
+        "operationId": "list_module_api_modules__resource__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource",
+            "required": true,
+            "schema": {
+              "title": "Resource",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Module"
       },
       "post": {
-        "summary": "Create incidents"
+        "operationId": "create_module_record_api_modules__resource__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource",
+            "required": true,
+            "schema": {
+              "title": "Resource",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Module Record"
       }
     },
-    "/api/incidents/{id}": {
+    "/api/operations/incidents": {
       "get": {
-        "summary": "Read incidents"
-      },
-      "patch": {
-        "summary": "Update incidents"
+        "operationId": "operations_incidents_api_operations_incidents_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Operations Incidents"
       }
     },
-    "/api/inventory_items": {
-      "get": {
-        "summary": "List inventory_items"
-      },
+    "/api/v1/employee/attendance/biometric": {
       "post": {
-        "summary": "Create inventory_items"
+        "operationId": "v1_employee_biometric_api_v1_employee_attendance_biometric_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BiometricVerificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Employee Biometric"
       }
     },
-    "/api/inventory_items/{id}": {
+    "/api/v1/employee/attendance/status": {
       "get": {
-        "summary": "Read inventory_items"
-      },
-      "patch": {
-        "summary": "Update inventory_items"
+        "operationId": "v1_employee_attendance_status_api_v1_employee_attendance_status_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Employee Attendance Status"
       }
     },
-    "/api/invoices": {
-      "get": {
-        "summary": "List invoices"
-      },
+    "/api/v1/employee/attendance/validate-location": {
       "post": {
-        "summary": "Create invoices"
+        "operationId": "v1_validate_employee_location_api_v1_employee_attendance_validate_location_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocationValidationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Validate Employee Location"
       }
     },
-    "/api/invoices/{id}": {
+    "/api/v1/employee/work-location": {
       "get": {
-        "summary": "Read invoices"
-      },
-      "patch": {
-        "summary": "Update invoices"
-      }
-    },
-    "/api/leave_requests": {
-      "get": {
-        "summary": "List leave_requests"
-      },
-      "post": {
-        "summary": "Create leave_requests"
-      }
-    },
-    "/api/leave_requests/{id}": {
-      "get": {
-        "summary": "Read leave_requests"
-      },
-      "patch": {
-        "summary": "Update leave_requests"
-      }
-    },
-    "/api/maintenance_work_orders": {
-      "get": {
-        "summary": "List maintenance_work_orders"
-      },
-      "post": {
-        "summary": "Create maintenance_work_orders"
-      }
-    },
-    "/api/maintenance_work_orders/{id}": {
-      "get": {
-        "summary": "Read maintenance_work_orders"
-      },
-      "patch": {
-        "summary": "Update maintenance_work_orders"
-      }
-    },
-    "/api/me": {
-      "get": {
-        "summary": "Current user"
-      }
-    },
-    "/api/mobile/check-in": {
-      "post": {
-        "summary": "Employee attendance check-in"
-      }
-    },
-    "/api/mobile/home": {
-      "get": {
-        "summary": "Employee mobile home"
-      }
-    },
-    "/api/mobile/incident": {
-      "post": {
-        "summary": "Employee incident report"
-      }
-    },
-    "/api/mobile/leave-request": {
-      "post": {
-        "summary": "Employee leave request"
-      }
-    },
-    "/api/mobile/sos": {
-      "post": {
-        "summary": "Employee emergency SOS"
-      }
-    },
-    "/api/openapi.json": {
-      "get": {
-        "summary": "Live OpenAPI metadata"
-      }
-    },
-    "/api/packaging_runs": {
-      "get": {
-        "summary": "List packaging_runs"
-      },
-      "post": {
-        "summary": "Create packaging_runs"
-      }
-    },
-    "/api/packaging_runs/{id}": {
-      "get": {
-        "summary": "Read packaging_runs"
-      },
-      "patch": {
-        "summary": "Update packaging_runs"
-      }
-    },
-    "/api/payroll_runs": {
-      "get": {
-        "summary": "List payroll_runs"
-      },
-      "post": {
-        "summary": "Create payroll_runs"
-      }
-    },
-    "/api/payroll_runs/{id}": {
-      "get": {
-        "summary": "Read payroll_runs"
-      },
-      "patch": {
-        "summary": "Update payroll_runs"
-      }
-    },
-    "/api/power_generation": {
-      "get": {
-        "summary": "List power_generation"
-      },
-      "post": {
-        "summary": "Create power_generation"
-      }
-    },
-    "/api/power_generation/{id}": {
-      "get": {
-        "summary": "Read power_generation"
-      },
-      "patch": {
-        "summary": "Update power_generation"
-      }
-    },
-    "/api/production_batches": {
-      "get": {
-        "summary": "List production_batches"
-      },
-      "post": {
-        "summary": "Create production_batches"
-      }
-    },
-    "/api/production_batches/{id}": {
-      "get": {
-        "summary": "Read production_batches"
-      },
-      "patch": {
-        "summary": "Update production_batches"
-      }
-    },
-    "/api/purchase_orders": {
-      "get": {
-        "summary": "List purchase_orders"
-      },
-      "post": {
-        "summary": "Create purchase_orders"
-      }
-    },
-    "/api/purchase_orders/{id}": {
-      "get": {
-        "summary": "Read purchase_orders"
-      },
-      "patch": {
-        "summary": "Update purchase_orders"
-      }
-    },
-    "/api/quality_tests": {
-      "get": {
-        "summary": "List quality_tests"
-      },
-      "post": {
-        "summary": "Create quality_tests"
-      }
-    },
-    "/api/quality_tests/{id}": {
-      "get": {
-        "summary": "Read quality_tests"
-      },
-      "patch": {
-        "summary": "Update quality_tests"
-      }
-    },
-    "/api/reports/operations-summary": {
-      "get": {
-        "summary": "Operations KPI report"
-      }
-    },
-    "/api/sales_orders": {
-      "get": {
-        "summary": "List sales_orders"
-      },
-      "post": {
-        "summary": "Create sales_orders"
-      }
-    },
-    "/api/sales_orders/{id}": {
-      "get": {
-        "summary": "Read sales_orders"
-      },
-      "patch": {
-        "summary": "Update sales_orders"
-      }
-    },
-    "/api/search": {
-      "get": {
-        "summary": "Tenant-safe global search"
-      }
-    },
-    "/api/shifts": {
-      "get": {
-        "summary": "List shifts"
-      },
-      "post": {
-        "summary": "Create shifts"
-      }
-    },
-    "/api/shifts/{id}": {
-      "get": {
-        "summary": "Read shifts"
-      },
-      "patch": {
-        "summary": "Update shifts"
-      }
-    },
-    "/api/support_tickets": {
-      "get": {
-        "summary": "List support_tickets"
-      },
-      "post": {
-        "summary": "Create support_tickets"
-      }
-    },
-    "/api/support_tickets/{id}": {
-      "get": {
-        "summary": "Read support_tickets"
-      },
-      "patch": {
-        "summary": "Update support_tickets"
-      }
-    },
-    "/api/tasks": {
-      "get": {
-        "summary": "List tasks"
-      },
-      "post": {
-        "summary": "Create tasks"
-      }
-    },
-    "/api/tasks/{id}": {
-      "get": {
-        "summary": "Read tasks"
-      },
-      "patch": {
-        "summary": "Update tasks"
-      }
-    },
-    "/api/training_records": {
-      "get": {
-        "summary": "List training_records"
-      },
-      "post": {
-        "summary": "Create training_records"
-      }
-    },
-    "/api/training_records/{id}": {
-      "get": {
-        "summary": "Read training_records"
-      },
-      "patch": {
-        "summary": "Update training_records"
-      }
-    },
-    "/api/vehicles": {
-      "get": {
-        "summary": "List vehicles"
-      },
-      "post": {
-        "summary": "Create vehicles"
-      }
-    },
-    "/api/vehicles/{id}": {
-      "get": {
-        "summary": "Read vehicles"
-      },
-      "patch": {
-        "summary": "Update vehicles"
-      }
-    },
-    "/api/visitor_passes": {
-      "get": {
-        "summary": "List visitor_passes"
-      },
-      "post": {
-        "summary": "Create visitor_passes"
-      }
-    },
-    "/api/visitor_passes/{id}": {
-      "get": {
-        "summary": "Read visitor_passes"
-      },
-      "patch": {
-        "summary": "Update visitor_passes"
-      }
-    },
-    "/api/warehouses": {
-      "get": {
-        "summary": "List warehouses"
-      },
-      "post": {
-        "summary": "Create warehouses"
-      }
-    },
-    "/api/warehouses/{id}": {
-      "get": {
-        "summary": "Read warehouses"
-      },
-      "patch": {
-        "summary": "Update warehouses"
-      }
-    },
-    "/api/weighbridge_tickets": {
-      "get": {
-        "summary": "List weighbridge_tickets"
-      },
-      "post": {
-        "summary": "Create weighbridge_tickets"
-      }
-    },
-    "/api/weighbridge_tickets/{id}": {
-      "get": {
-        "summary": "Read weighbridge_tickets"
-      },
-      "patch": {
-        "summary": "Update weighbridge_tickets"
+        "operationId": "v1_employee_work_location_api_v1_employee_work_location_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Employee Work Location"
       }
     }
-  },
-  "security": [
-    {
-      "bearerAuth": []
-    }
-  ]
+  }
 }

@@ -1,8 +1,11 @@
 import base64
 import hashlib
 import hmac
+import json
+import math
 import os
 import time
+import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -55,6 +58,30 @@ class LeaveApplyRequest(BaseModel):
     from_date: str
     to_date: str
     reason: str
+
+class LocationValidationRequest(BaseModel):
+    event_type: str = "day_in"
+    latitude: float
+    longitude: float
+    accuracy: float
+    altitude: float | None = None
+    speed: float | None = None
+    provider: str = "device_gps"
+    captured_at: str | None = None
+    device_time: str | None = None
+    device_id: str | None = None
+    app_version: str | None = None
+    mock_location_indicator: str | None = None
+
+class BiometricVerificationRequest(BaseModel):
+    event_type: str = "day_in"
+    attendance_record_id: str | None = None
+    verification_method: str
+    verification_result: str
+    assertion_reference: str | None = None
+    trusted_device_id: str | None = None
+    failure_reason: str | None = None
+    risk_flags: str | None = None
 
 def _sign(email: str) -> str:
     if not AUTH_CONFIGURED:
@@ -142,6 +169,238 @@ def _gps(payload: EmployeeAttendanceEvent | EmployeeLocationPing) -> str:
     if payload.accuracy is not None:
         bits.append(f"accuracy {payload.accuracy:.0f}m")
     return ", ".join(bits)
+
+def _new_ref(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex[:12].upper()}"
+
+def _float_value(data: dict[str, Any], key: str, default: float = 0.0) -> float:
+    try:
+        value = data.get(key)
+        return default if value in (None, "") else float(value)
+    except (TypeError, ValueError):
+        return default
+
+def _json_points(value: str | None) -> list[tuple[float, float]]:
+    if not value:
+        return []
+    try:
+        raw = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    points = []
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, dict):
+                lat = item.get("latitude") or item.get("lat")
+                lon = item.get("longitude") or item.get("lng") or item.get("lon")
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                lat, lon = item[0], item[1]
+            else:
+                continue
+            try:
+                points.append((float(lat), float(lon)))
+            except (TypeError, ValueError):
+                continue
+    return points
+
+def _haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    radius = 6371000.0
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lon2 - lon1)
+    a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    return radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+def _point_in_polygon(latitude: float, longitude: float, points: list[tuple[float, float]]) -> bool:
+    if len(points) < 3:
+        return False
+    inside = False
+    j = len(points) - 1
+    for i, point in enumerate(points):
+        yi, xi = point
+        yj, xj = points[j]
+        crosses = (xi > longitude) != (xj > longitude)
+        if crosses:
+            slope_lat = (yj - yi) * (longitude - xi) / ((xj - xi) or 1e-12) + yi
+            if latitude < slope_lat:
+                inside = not inside
+        j = i
+    return inside
+
+def _records_by_field(resource: str, field: str, value: str, limit: int = 500):
+    return [
+        item for item in storage.list_records(resource, limit)
+        if str((item.get("data") or {}).get(field, "")).strip().lower() == value.strip().lower()
+    ]
+
+def _active_record(rows: list[dict[str, Any]]):
+    return next((row for row in rows if row.get("status") == "Active"), None) or (rows[0] if rows else None)
+
+def _employee_work_location(employee_code: str):
+    assignments = _records_by_field("employee_location_assignments", "employee_code", employee_code)
+    assignment = _active_record(assignments)
+    if assignment:
+        location_id = assignment.get("data", {}).get("location_id", "")
+        location = _active_record(_records_by_field("work_locations", "location_id", location_id))
+        if location:
+            return assignment, location
+    locations = storage.list_records("work_locations", 100)
+    location = _active_record(locations)
+    return None, location
+
+def _geofence_for_location(location_id: str):
+    geofences = _records_by_field("geofences", "location_id", location_id)
+    return _active_record(geofences)
+
+def _geofence_validation(employee_code: str, payload: LocationValidationRequest):
+    assignment, location = _employee_work_location(employee_code)
+    location_data = location.get("data", {}) if location else {}
+    location_id = location_data.get("location_id", "")
+    geofence = _geofence_for_location(location_id) if location_id else None
+    geofence_data = geofence.get("data", {}) if geofence else {}
+    allowed_accuracy = _float_value(geofence_data, "allowed_accuracy_meters") or _float_value(location_data, "allowed_gps_accuracy_meters", 50)
+    risk_flags = []
+
+    if payload.accuracy > allowed_accuracy:
+        risk_flags.append("poor_accuracy")
+        geofence_status = "Accuracy Rejected"
+        validation_reason = f"Device accuracy {payload.accuracy:.0f}m exceeds allowed {allowed_accuracy:.0f}m."
+        inside = False
+        distance = 0.0
+        center_lat = _float_value(geofence_data, "center_latitude") or _float_value(location_data, "latitude")
+        center_lon = _float_value(geofence_data, "center_longitude") or _float_value(location_data, "longitude")
+    elif not location or not geofence:
+        geofence_status = "Geofence Not Assigned"
+        validation_reason = "No active work location/geofence assignment found for this employee."
+        inside = False
+        distance = 0.0
+        center_lat = _float_value(location_data, "latitude")
+        center_lon = _float_value(location_data, "longitude")
+        risk_flags.append("missing_geofence_assignment")
+    else:
+        center_lat = _float_value(geofence_data, "center_latitude") or _float_value(location_data, "latitude")
+        center_lon = _float_value(geofence_data, "center_longitude") or _float_value(location_data, "longitude")
+        geofence_type = (geofence_data.get("geofence_type") or location_data.get("geofence_type") or "Circular").lower()
+        radius = _float_value(geofence_data, "radius_meters") or _float_value(location_data, "geofence_radius_meters", 100)
+        distance = _haversine_meters(payload.latitude, payload.longitude, center_lat, center_lon)
+        if "polygon" in geofence_type:
+            points = _json_points(geofence_data.get("polygon_coordinates"))
+            inside = _point_in_polygon(payload.latitude, payload.longitude, points)
+            validation_reason = "Point is inside polygon geofence." if inside else "Point is outside polygon geofence."
+        else:
+            inside = distance <= radius
+            validation_reason = f"Distance {distance:.1f}m within radius {radius:.1f}m." if inside else f"Distance {distance:.1f}m exceeds radius {radius:.1f}m."
+        geofence_status = "Inside Fence" if inside else "Outside Fence"
+        if not inside:
+            risk_flags.append("outside_fence")
+
+    radius = _float_value(geofence_data, "radius_meters") or _float_value(location_data, "geofence_radius_meters", 0)
+    result = {
+        "employee_code": employee_code,
+        "event_type": payload.event_type,
+        "location_id": location_id,
+        "location_name": location_data.get("location_name", ""),
+        "geofence_id": geofence_data.get("geofence_id", ""),
+        "geofence_version": geofence_data.get("boundary_version", "1"),
+        "employee_latitude": f"{payload.latitude:.8f}",
+        "employee_longitude": f"{payload.longitude:.8f}",
+        "geofence_latitude": f"{center_lat:.8f}" if center_lat else "",
+        "geofence_longitude": f"{center_lon:.8f}" if center_lon else "",
+        "distance_meters": f"{distance:.2f}",
+        "radius_meters": f"{radius:.2f}",
+        "inside_fence": "Yes" if inside else "No",
+        "accuracy_meters": f"{payload.accuracy:.2f}",
+        "allowed_accuracy_meters": f"{allowed_accuracy:.2f}",
+        "geofence_status": geofence_status,
+        "validation_reason": validation_reason,
+        "risk_flags": ",".join(risk_flags) if risk_flags else "none",
+        "server_validated_at": _now_iso(),
+        "can_continue": bool(inside and payload.accuracy <= allowed_accuracy),
+    }
+    return result
+
+def _write_audit(actor: str, action: str, entity_type: str, entity_id: str, new_values: dict[str, Any], reason: str = ""):
+    try:
+        storage.create_record("audit_logs", {
+            "audit_id": _new_ref("AUD"),
+            "actor": actor,
+            "action": action,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "previous_values": "",
+            "new_values": json.dumps(new_values, sort_keys=True),
+            "reason": reason,
+            "status": "Active",
+        })
+    except Exception:
+        pass
+
+def _persist_location_validation(employee_code: str, payload: LocationValidationRequest, validation: dict[str, Any], attendance_record_id: str = "pending"):
+    event_id = _new_ref("LOC")
+    storage.create_record("attendance_location_events", {
+        "event_id": event_id,
+        "attendance_record_id": attendance_record_id,
+        "employee_code": employee_code,
+        "event_type": payload.event_type,
+        "latitude": str(payload.latitude),
+        "longitude": str(payload.longitude),
+        "accuracy": str(payload.accuracy),
+        "altitude": "" if payload.altitude is None else str(payload.altitude),
+        "speed": "" if payload.speed is None else str(payload.speed),
+        "provider": payload.provider,
+        "captured_at": payload.captured_at or _now_iso(),
+        "received_at": _now_iso(),
+        "device_time": payload.device_time or "",
+        "server_time": _now_iso(),
+        "geofence_id": validation["geofence_id"],
+        "geofence_version": validation["geofence_version"],
+        "distance_meters": validation["distance_meters"],
+        "inside_fence": validation["inside_fence"],
+        "tolerance_applied": "No",
+        "mock_location_indicator": payload.mock_location_indicator or "Unknown",
+        "risk_score": "0" if validation["risk_flags"] == "none" else "70",
+        "validation_result": validation["geofence_status"],
+        "failure_reason": "" if validation["can_continue"] else validation["validation_reason"],
+        "device_id": payload.device_id or "",
+        "ip_address": "",
+        "app_version": payload.app_version or "",
+        "status": "Passed" if validation["can_continue"] else "Failed",
+    })
+    validation_id = _new_ref("VAL")
+    storage.create_record("attendance_validation_results", {
+        "validation_id": validation_id,
+        "employee_code": employee_code,
+        "event_type": payload.event_type,
+        "location_id": validation["location_id"],
+        "geofence_id": validation["geofence_id"],
+        "employee_latitude": validation["employee_latitude"],
+        "employee_longitude": validation["employee_longitude"],
+        "geofence_latitude": validation["geofence_latitude"],
+        "geofence_longitude": validation["geofence_longitude"],
+        "distance_meters": validation["distance_meters"],
+        "radius_meters": validation["radius_meters"],
+        "inside_fence": validation["inside_fence"],
+        "accuracy_meters": validation["accuracy_meters"],
+        "allowed_accuracy_meters": validation["allowed_accuracy_meters"],
+        "geofence_status": validation["geofence_status"],
+        "validation_reason": validation["validation_reason"],
+        "risk_flags": validation["risk_flags"],
+        "server_validated_at": validation["server_validated_at"],
+        "status": "Passed" if validation["can_continue"] else "Failed",
+    })
+    return {"event_id": event_id, "validation_id": validation_id}
+
+def _location_payload_from_attendance(kind: str, payload: EmployeeAttendanceEvent) -> LocationValidationRequest:
+    if payload.latitude is None or payload.longitude is None or payload.accuracy is None:
+        raise HTTPException(status_code=422, detail="Current latitude, longitude, and GPS accuracy are required.")
+    return LocationValidationRequest(
+        event_type=kind.replace("-", "_"),
+        latitude=payload.latitude,
+        longitude=payload.longitude,
+        accuracy=payload.accuracy,
+        provider="device_gps",
+    )
 
 def _records_for_employee(resource: str, employee_code: str, limit: int = 500):
     return [
@@ -289,10 +548,13 @@ def employee_summary(email: str = Depends(_verify)):
     leaves = _records_for_employee("leave_requests", employee_code, 100)
     balances = _records_for_employee("leave_balances", employee_code, 20)
     locations = _records_for_employee("employee_locations", employee_code, 20)
+    assignment, work_location = _employee_work_location(employee_code)
     return {
         "employee_code": employee_code,
         "attendance": attendance,
         "attendance_policy": policy,
+        "assignment": assignment.get("data", {}) if assignment else None,
+        "work_location": work_location.get("data", {}) if work_location else None,
         "calendar": calendar,
         "leave": {
             "pending": len([row for row in leaves if row.get("status") in {"Open", "Pending"}]),
@@ -309,6 +571,61 @@ def employee_summary(email: str = Depends(_verify)):
         },
     }
 
+@app.get("/api/v1/employee/attendance/status")
+def v1_employee_attendance_status(email: str = Depends(_verify)):
+    employee_code = _employee_code(email)
+    assignment, location = _employee_work_location(employee_code)
+    return {
+        "employee_code": employee_code,
+        "attendance": _attendance_snapshot(employee_code),
+        "attendance_policy": _attendance_policy(),
+        "assignment": assignment.get("data", {}) if assignment else None,
+        "work_location": location.get("data", {}) if location else None,
+    }
+
+@app.get("/api/v1/employee/work-location")
+def v1_employee_work_location(email: str = Depends(_verify)):
+    assignment, location = _employee_work_location(_employee_code(email))
+    return {
+        "assignment": assignment.get("data", {}) if assignment else None,
+        "work_location": location.get("data", {}) if location else None,
+    }
+
+@app.post("/api/v1/employee/attendance/validate-location")
+def v1_validate_employee_location(payload: LocationValidationRequest, email: str = Depends(_verify)):
+    employee_code = _employee_code(email)
+    validation = _geofence_validation(employee_code, payload)
+    refs = _persist_location_validation(employee_code, payload, validation)
+    _write_audit(email, "validate_location", "attendance_validation_results", refs["validation_id"], validation, validation["validation_reason"])
+    return {"validation": validation, "refs": refs}
+
+@app.post("/api/v1/employee/attendance/biometric")
+def v1_employee_biometric(payload: BiometricVerificationRequest, email: str = Depends(_verify)):
+    employee_code = _employee_code(email)
+    method = payload.verification_method.strip().lower()
+    if method not in {"fingerprint", "device_credential"}:
+        raise HTTPException(status_code=422, detail="Only fingerprint or device credential verification is allowed for this app. Raw biometric data is never stored.")
+    result = payload.verification_result.strip().lower()
+    if result not in {"success", "failed", "cancelled", "locked", "unavailable"}:
+        raise HTTPException(status_code=422, detail="Invalid biometric verification result.")
+    event_id = _new_ref("BIO")
+    item = storage.create_record("attendance_biometric_events", {
+        "event_id": event_id,
+        "attendance_record_id": payload.attendance_record_id or "pending",
+        "employee_code": employee_code,
+        "event_type": payload.event_type,
+        "verification_method": method,
+        "verification_result": result,
+        "assertion_reference": payload.assertion_reference or _new_ref("ASSERT"),
+        "trusted_device_id": payload.trusted_device_id or "",
+        "failure_reason": payload.failure_reason or "",
+        "risk_flags": payload.risk_flags or "none",
+        "verified_at": _now_iso(),
+        "status": "Passed" if result == "success" else "Failed",
+    })
+    _write_audit(email, "biometric_verification", "attendance_biometric_events", event_id, item.get("data", {}), "OS biometric result metadata only.")
+    return {"item": item, "biometric_privacy": "Raw fingerprints and biometric templates are not captured, transmitted, or stored."}
+
 @app.post("/api/mobile/employee/day-in")
 def employee_day_in(payload: EmployeeAttendanceEvent, email: str = Depends(_verify)):
     employee_code = _employee_code(email, payload.employee_code)
@@ -316,6 +633,11 @@ def employee_day_in(payload: EmployeeAttendanceEvent, email: str = Depends(_veri
     snapshot = _attendance_snapshot(employee_code, policy)
     if snapshot["checked_in"]:
         raise HTTPException(status_code=409, detail="Day-in already active. Complete day-out first.")
+    location_payload = _location_payload_from_attendance("day-in", payload)
+    validation = _geofence_validation(employee_code, location_payload)
+    refs = _persist_location_validation(employee_code, location_payload, validation)
+    if not validation["can_continue"]:
+        raise HTTPException(status_code=422, detail=validation["validation_reason"])
     data = {
         "employee_code": employee_code,
         "date": _today(),
@@ -325,6 +647,30 @@ def employee_day_in(payload: EmployeeAttendanceEvent, email: str = Depends(_veri
         "status": "Active",
     }
     item = storage.create_record("attendance", data)
+    storage.create_record("attendance_records", {
+        "attendance_record_id": _new_ref("ATT"),
+        "employee_code": employee_code,
+        "employee_name": employee_code,
+        "department": "",
+        "designation": "",
+        "company": "",
+        "branch": "",
+        "work_location": validation["location_name"],
+        "shift": payload.shift or "General",
+        "attendance_date": _today(),
+        "day_in_time": _hhmm(),
+        "day_in_latitude": validation["employee_latitude"],
+        "day_in_longitude": validation["employee_longitude"],
+        "day_in_accuracy": validation["accuracy_meters"],
+        "day_in_distance": validation["distance_meters"],
+        "day_in_geofence_status": validation["geofence_status"],
+        "day_in_biometric_result": "Pending",
+        "attendance_status": "Present",
+        "payroll_status": "Pending",
+        "approval_status": "Approved" if validation["inside_fence"] == "Yes" else "Pending",
+        "source": "employee_mobile",
+        "status": "Active",
+    })
     if payload.latitude is not None and payload.longitude is not None:
         storage.create_record("employee_locations", {
             "employee_code": employee_code,
@@ -335,7 +681,8 @@ def employee_day_in(payload: EmployeeAttendanceEvent, email: str = Depends(_veri
             "event": "day_in",
             "status": "Active",
         })
-    return {"item": item, "attendance": _attendance_snapshot(employee_code, policy), "attendance_policy": policy}
+    _write_audit(email, "day_in", "attendance", item.get("id", ""), {"attendance": item, "validation": validation}, "Employee mobile day-in.")
+    return {"item": item, "attendance": _attendance_snapshot(employee_code, policy), "attendance_policy": policy, "validation": validation, "refs": refs}
 
 @app.post("/api/mobile/employee/day-out")
 def employee_day_out(payload: EmployeeAttendanceEvent, email: str = Depends(_verify)):
@@ -346,6 +693,11 @@ def employee_day_out(payload: EmployeeAttendanceEvent, email: str = Depends(_ver
         raise HTTPException(status_code=409, detail="Day-in is required before day-out.")
     if snapshot["day_out_time"]:
         raise HTTPException(status_code=409, detail="Day-out already recorded for today.")
+    location_payload = _location_payload_from_attendance("day-out", payload)
+    validation = _geofence_validation(employee_code, location_payload)
+    refs = _persist_location_validation(employee_code, location_payload, validation)
+    if not validation["can_continue"]:
+        raise HTTPException(status_code=422, detail=validation["validation_reason"])
     data = {
         "employee_code": employee_code,
         "date": _today(),
@@ -365,7 +717,8 @@ def employee_day_out(payload: EmployeeAttendanceEvent, email: str = Depends(_ver
             "event": "day_out",
             "status": "Completed",
         })
-    return {"item": item, "attendance": _attendance_snapshot(employee_code, policy), "attendance_policy": policy}
+    _write_audit(email, "day_out", "attendance", item.get("id", ""), {"attendance": item, "validation": validation}, "Employee mobile day-out.")
+    return {"item": item, "attendance": _attendance_snapshot(employee_code, policy), "attendance_policy": policy, "validation": validation, "refs": refs}
 
 @app.post("/api/mobile/employee/location")
 def employee_location(payload: EmployeeLocationPing, email: str = Depends(_verify)):
@@ -373,6 +726,15 @@ def employee_location(payload: EmployeeLocationPing, email: str = Depends(_verif
     snapshot = _attendance_snapshot(employee_code)
     if not snapshot["checked_in"]:
         raise HTTPException(status_code=409, detail="Location tracking is allowed only during active working hours after day-in.")
+    location_payload = LocationValidationRequest(
+        event_type=payload.event or "tracking",
+        latitude=payload.latitude,
+        longitude=payload.longitude,
+        accuracy=payload.accuracy or 9999,
+        provider="device_gps",
+    )
+    validation = _geofence_validation(employee_code, location_payload)
+    refs = _persist_location_validation(employee_code, location_payload, validation)
     item = storage.create_record("employee_locations", {
         "employee_code": employee_code,
         "timestamp": _now_iso(),
@@ -382,7 +744,7 @@ def employee_location(payload: EmployeeLocationPing, email: str = Depends(_verif
         "event": payload.event or "tracking",
         "status": "Active",
     })
-    return {"item": item, "tracking": {"active": True}}
+    return {"item": item, "tracking": {"active": True}, "validation": validation, "refs": refs}
 
 @app.get("/api/mobile/employee/calendar")
 def employee_calendar(email: str = Depends(_verify)):
