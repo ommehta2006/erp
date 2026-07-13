@@ -1,6 +1,57 @@
 {
   "components": {
     "schemas": {
+      "AttendanceCorrectionRequest": {
+        "properties": {
+          "attendance_date": {
+            "title": "Attendance Date",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "requested_changes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Changes"
+          },
+          "requested_day_in_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Day In Time"
+          },
+          "requested_day_out_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Day Out Time"
+          }
+        },
+        "required": [
+          "attendance_date",
+          "reason"
+        ],
+        "title": "AttendanceCorrectionRequest",
+        "type": "object"
+      },
       "BiometricVerificationRequest": {
         "properties": {
           "assertion_reference": {
@@ -1414,6 +1465,104 @@
         "summary": "V1 Employee Biometric"
       }
     },
+    "/api/v1/employee/attendance/correction": {
+      "post": {
+        "operationId": "v1_employee_attendance_correction_api_v1_employee_attendance_correction_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttendanceCorrectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Employee Attendance Correction"
+      }
+    },
+    "/api/v1/employee/attendance/history": {
+      "get": {
+        "operationId": "v1_employee_attendance_history_api_v1_employee_attendance_history_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Employee Attendance History"
+      }
+    },
     "/api/v1/employee/attendance/status": {
       "get": {
         "operationId": "v1_employee_attendance_status_api_v1_employee_attendance_status_get",
@@ -1510,6 +1659,94 @@
           }
         },
         "summary": "V1 Validate Employee Location"
+      }
+    },
+    "/api/v1/employee/leave/balance": {
+      "get": {
+        "operationId": "v1_employee_leave_balance_api_v1_employee_leave_balance_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Employee Leave Balance"
+      }
+    },
+    "/api/v1/employee/profile": {
+      "get": {
+        "operationId": "v1_employee_profile_api_v1_employee_profile_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Employee Profile"
       }
     },
     "/api/v1/employee/work-location": {

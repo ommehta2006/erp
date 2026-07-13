@@ -53,6 +53,13 @@ type AttendanceCalendar = {
   holiday: number;
   days: { date: string; day: number; status: string }[];
 };
+type EmployeeHistory = {
+  items: RecordItem[];
+  legacy_items: RecordItem[];
+  location_events: RecordItem[];
+  biometric_events: RecordItem[];
+  correction_requests: RecordItem[];
+};
 type Department = {
   id: string;
   name: string;
@@ -280,13 +287,19 @@ function HomeScreen({ token, user, navigate }: { token: string; user: User; navi
 
 function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Screen) => void }) {
   const { data, loading, error, refresh } = useApi<EmployeeSummary>(token, "/api/mobile/employee/summary");
+  const { data: history, loading: historyLoading, error: historyError, refresh: refreshHistory } = useApi<EmployeeHistory>(token, "/api/v1/employee/attendance/history");
   const [busy, setBusy] = useState(false);
   const [leaveType, setLeaveType] = useState("Casual Leave");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [reason, setReason] = useState("");
+  const [correctionDate, setCorrectionDate] = useState("");
+  const [correctionIn, setCorrectionIn] = useState("");
+  const [correctionOut, setCorrectionOut] = useState("");
+  const [correctionReason, setCorrectionReason] = useState("");
   const [tracking, setTracking] = useState(false);
   const trackingInterval = Math.max(Number(data?.attendance_policy?.tracking_interval_minutes || 5), 1);
+  const attendanceRows = history?.items?.length ? history.items : history?.legacy_items || [];
 
   useEffect(() => {
     if (!tracking || !data?.attendance.checked_in) return;
@@ -318,6 +331,7 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
       if (kind === "day-in") setTracking(true);
       if (kind === "day-out") setTracking(false);
       refresh();
+      refreshHistory();
     } catch (err) {
       Alert.alert("Attendance", err instanceof Error ? err.message : "Attendance action failed");
     } finally {
@@ -359,6 +373,7 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
       setReason("");
       Alert.alert("Leave request", "Leave request saved to ERP for approval.");
       refresh();
+      refreshHistory();
     } catch (err) {
       Alert.alert("Leave request", err instanceof Error ? err.message : "Leave apply failed");
     } finally {
@@ -366,10 +381,45 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
     }
   }
 
+  async function submitCorrection() {
+    if (!correctionDate.trim() || !correctionReason.trim()) {
+      Alert.alert("Correction request", "Attendance date and reason are required.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/v1/employee/attendance/correction`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          attendance_date: correctionDate,
+          requested_day_in_time: correctionIn,
+          requested_day_out_time: correctionOut,
+          reason: correctionReason,
+          requested_changes: `Day In ${correctionIn || "-"} / Day Out ${correctionOut || "-"}`,
+        })
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.detail || "Correction request failed");
+      }
+      setCorrectionIn("");
+      setCorrectionOut("");
+      setCorrectionReason("");
+      Alert.alert("Correction request", "Request submitted to HR for approval.");
+      refreshHistory();
+    } catch (err) {
+      Alert.alert("Correction request", err instanceof Error ? err.message : "Correction request failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <ScreenScroll refresh={refresh} loading={loading}>
+    <ScreenScroll refresh={() => { refresh(); refreshHistory(); }} loading={loading || historyLoading}>
       <TopBar title="Employee Work" subtitle="Attendance, leave, salary, calendar and location controls" />
       {error ? <ErrorBanner message={error} /> : null}
+      {historyError ? <ErrorBanner message={historyError} /> : null}
 
       <LinearGradient colors={data?.attendance.checked_in ? ["#065f46", "#0f766e"] : ["#0f172a", "#334155"]} style={styles.attendanceCard}>
         <View style={styles.moduleHeader}>
@@ -408,6 +458,34 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
         <CountTile label="Holiday" value={data?.calendar.holiday || 0} color="#0284c7" />
       </View>
       <CalendarGrid days={data?.calendar.days || []} />
+
+      <SectionHeader title="Attendance History" />
+      {(attendanceRows || []).length === 0 ? (
+        <EmptyState title="No attendance records" body="Day In, Day Out, and HR-approved corrections will appear here from the live ERP." />
+      ) : attendanceRows.slice(0, 5).map((item) => (
+        <View key={item.id} style={styles.historyRow}>
+          <View style={styles.flex}>
+            <Text style={styles.historyTitle}>{item.data.attendance_date || item.data.date || "Attendance"}</Text>
+            <Text style={styles.historyMeta}>
+              In {item.data.day_in_time || item.data.check_in || "--:--"} - Out {item.data.day_out_time || item.data.check_out || "--:--"}
+            </Text>
+            <Text style={styles.historyMeta}>{item.data.day_in_geofence_status || item.data.gps_area || "Location evidence pending"}</Text>
+          </View>
+          <Text style={styles.historyStatus}>{item.status || item.data.attendance_status || item.data.status || "Open"}</Text>
+        </View>
+      ))}
+
+      <SectionHeader title="Correction Request" />
+      <View style={styles.largeCard}>
+        <Text style={styles.cardMeta}>Pending {history?.correction_requests?.filter((item) => ["Open", "Pending", "Pending Approval"].includes(item.status)).length || 0} requests</Text>
+        <Input label="Attendance date" value={correctionDate} onChangeText={setCorrectionDate} placeholder="YYYY-MM-DD" />
+        <Input label="Requested Day In" value={correctionIn} onChangeText={setCorrectionIn} placeholder="HH:MM" />
+        <Input label="Requested Day Out" value={correctionOut} onChangeText={setCorrectionOut} placeholder="HH:MM" />
+        <Input label="Reason" value={correctionReason} onChangeText={setCorrectionReason} placeholder="GPS issue, official travel, missing punch..." />
+        <Pressable style={[styles.primaryButton, busy && styles.disabledButton]} disabled={busy} onPress={submitCorrection}>
+          <Text style={styles.primaryButtonText}>Submit Correction</Text>
+        </Pressable>
+      </View>
 
       <SectionHeader title="Leave" />
       <View style={styles.largeCard}>
@@ -883,6 +961,10 @@ const styles = StyleSheet.create({
   calendarGrid: { flexDirection: "row", flexWrap: "wrap", gap: 6, borderRadius: 18, backgroundColor: "white", padding: 12, borderWidth: 1, borderColor: "#e2e8f0" },
   calendarDay: { width: 34, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   calendarDayText: { color: "white", fontSize: 12, fontWeight: "900" },
+  historyRow: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 16, backgroundColor: "white", padding: 14, borderWidth: 1, borderColor: "#e2e8f0", marginBottom: 8 },
+  historyTitle: { color: "#0f172a", fontSize: 14, fontWeight: "900" },
+  historyMeta: { marginTop: 3, color: "#64748b", fontSize: 12 },
+  historyStatus: { overflow: "hidden", borderRadius: 10, backgroundColor: "#e0f2fe", paddingHorizontal: 8, paddingVertical: 5, color: "#0369a1", fontSize: 12, fontWeight: "900" },
   salaryAmount: { marginTop: 8, color: "#0f766e", fontSize: 30, fontWeight: "900" },
   heroEyebrow: { color: "#99f6e4", fontSize: 12, fontWeight: "800", textTransform: "uppercase" },
   heroTitle: { marginTop: 8, color: "white", fontSize: 26, fontWeight: "800", lineHeight: 31 },

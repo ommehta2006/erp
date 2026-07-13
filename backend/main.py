@@ -59,6 +59,13 @@ class LeaveApplyRequest(BaseModel):
     to_date: str
     reason: str
 
+class AttendanceCorrectionRequest(BaseModel):
+    attendance_date: str
+    requested_day_in_time: str | None = None
+    requested_day_out_time: str | None = None
+    reason: str
+    requested_changes: str | None = None
+
 class LocationValidationRequest(BaseModel):
     event_type: str = "day_in"
     latitude: float
@@ -669,6 +676,62 @@ def v1_employee_work_location(email: str = Depends(_verify)):
     return {
         "assignment": assignment.get("data", {}) if assignment else None,
         "work_location": location.get("data", {}) if location else None,
+    }
+
+@app.get("/api/v1/employee/profile")
+def v1_employee_profile(email: str = Depends(_verify)):
+    employee_code = _employee_code(email)
+    employee = _active_record(_records_for_employee("employees", employee_code, 20)) or _active_record(_records_by_field("employees", "email", email, 20))
+    return {
+        "employee_code": employee_code,
+        "employee": employee.get("data", {}) if employee else {"employee_code": employee_code, "email": email, "status": "Active"},
+        "private_details": [item.get("data", {}) for item in _records_for_employee("employee_private_details", employee_code, 20)],
+        "documents": [item.get("data", {}) for item in _records_for_employee("employee_documents", employee_code, 20)],
+        "emergency_contacts": [item.get("data", {}) for item in _records_for_employee("employee_emergency_contacts", employee_code, 20)],
+        "lifecycle": [item.get("data", {}) for item in _records_for_employee("employee_lifecycle_events", employee_code, 100)],
+    }
+
+@app.get("/api/v1/employee/attendance/history")
+def v1_employee_attendance_history(email: str = Depends(_verify)):
+    employee_code = _employee_code(email)
+    return {
+        "items": _records_for_employee("attendance_records", employee_code, 100),
+        "legacy_items": _records_for_employee("attendance", employee_code, 100),
+        "location_events": _records_for_employee("attendance_location_events", employee_code, 100),
+        "biometric_events": _records_for_employee("attendance_biometric_events", employee_code, 100),
+        "correction_requests": _records_for_employee("attendance_correction_requests", employee_code, 100),
+    }
+
+@app.post("/api/v1/employee/attendance/correction")
+def v1_employee_attendance_correction(payload: AttendanceCorrectionRequest, email: str = Depends(_verify)):
+    employee_code = _employee_code(email)
+    if not payload.attendance_date.strip() or not payload.reason.strip():
+        raise HTTPException(status_code=422, detail="Attendance date and reason are required.")
+    item = storage.create_record("attendance_correction_requests", {
+        "request_id": _new_ref("COR"),
+        "employee_code": employee_code,
+        "attendance_date": payload.attendance_date.strip(),
+        "requested_day_in_time": (payload.requested_day_in_time or "").strip(),
+        "requested_day_out_time": (payload.requested_day_out_time or "").strip(),
+        "reason": payload.reason.strip(),
+        "current_record": "",
+        "requested_changes": (payload.requested_changes or "").strip(),
+        "manager_approval": "Pending",
+        "hr_approval": "Pending",
+        "final_status": "Pending Approval",
+        "status": "Pending Approval",
+    })
+    _write_audit(email, "submit_attendance_correction", "attendance_correction_requests", item.get("id", ""), item.get("data", {}), payload.reason)
+    return {"item": item}
+
+@app.get("/api/v1/employee/leave/balance")
+def v1_employee_leave_balance(email: str = Depends(_verify)):
+    employee_code = _employee_code(email)
+    return {
+        "balances": _records_for_employee("leave_balances", employee_code, 100),
+        "allocations": _records_for_employee("leave_allocations", employee_code, 100),
+        "applications": _records_for_employee("leave_applications", employee_code, 100),
+        "legacy_requests": _records_for_employee("leave_requests", employee_code, 100),
     }
 
 @app.post("/api/v1/employee/attendance/validate-location")
