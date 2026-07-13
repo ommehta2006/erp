@@ -1,6 +1,6 @@
 # System Architecture and Security
 
-Last verified: 2026-07-12. Release: v0.4.0-reference. Owner: FactoryPulse delivery team.
+Last verified: 2026-07-12. Release: v0.5.0-reference. Owner: FactoryPulse delivery team.
 
 Architecture: Python standard-library HTTP server, SQLite persistence, static SPA frontend, Docker runtime, and file-based environment configuration. The server owns authentication, authorization, validation, audit logging, idempotency, CSV export, OpenAPI metadata, and tenant resolution.
 

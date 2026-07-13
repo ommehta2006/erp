@@ -1,100 +1,96 @@
 # FactoryPulse ERP
 
-Current reference release: `v0.4.0-reference`
+FactoryPulse ERP is a deploy-ready factory ERP and employee operations app built from the `emergent-erp-ai-builder` blueprint. The active stack is:
 
+- `backend/`: FastAPI API for Railway or Docker
+- `frontend/`: Next.js app for Vercel
+- `supabase/schema.sql`: Supabase Postgres table schema
+- `frappe_app/`: retained native Frappe/ERPNext scaffold for a separate ERPNext path
 
-FactoryPulse ERP is a deploy-ready reference implementation for a secure factory ERP, employee operations app, and tenant administration workspace. It was generated from the `emergent-erp-ai-builder` blueprint and the factory requirements in `00_requirement.md`.
+The app starts empty by design. No demo records are seeded. After login, the home page shows department containers first. Each department opens its own module workspace and reads/writes records through authenticated backend API routes.
 
-This package is intentionally self-contained: the API, RBAC, tenant isolation, audit log, persistence, seeded factory data, and professional responsive UI all run with Python standard library + SQLite. It is ready for local client review and can be containerized immediately.
+## ERP Coverage
 
-## What is included
+Departments included in the live catalog:
 
-- Secure HTTP API with bearer tokens, PBKDF2 password hashing, HMAC-signed session tokens, idempotent creates, rate limiting, request size limits, CORS allowlist, security headers, OpenAPI metadata, CSV export, and structured errors.
-- Real persistence using SQLite. No screen is hardcoded to fake API responses.
-- Tenant-isolated records and server-side role checks for every API route.
-- Professional responsive ERP UI with dashboard, operations report, module navigation, command palette/search, dense tables, create/update forms, CSV exports, people/access administration, security center, dark mode, audit view, and mobile layouts.
-- Factory ERP modules for employees, attendance, leave, shifts, departments, farmers, cane registration, harvest planning, vehicles, weighbridge, production, quality, maintenance, assets, inventory, buying, sales, invoices, incidents, tasks, approvals, payroll, training, visitors, documents, dispatch, warehouses, power generation, distillery, ethanol, by-products, boiler, packaging, and help desk.
-- Dockerfile, Docker Compose, smoke test, unit tests, environment contract, and final handoff docs.
+- HR & Employee
+- Finance & Accounts
+- Cane & Farmer
+- Manufacturing
+- Inventory & Dispatch
+- Quality & Compliance
+- Maintenance & Assets
+- Sales & Customer
+- Administration
 
-## Local run
+The module catalog covers employees, attendance, leave, shifts, payroll, recruitment, performance, training, expenses, visitors, invoices, purchase orders, sales orders, budgets, taxes, farmers, cane registration, harvest plans, vehicles, weighbridge, production, boiler, packaging, byproducts, power generation, distillery, ethanol dispatch, inventory, warehouses, dispatches, assets, quality tests, lab instruments, compliance, documents, incidents, maintenance work orders, tasks, support tickets, approvals, and customer portal requests.
+
+## Security
+
+- Bearer-token authentication with HMAC-signed expiring tokens.
+- Constant-time password comparison.
+- Required `APP_SECRET_KEY` and `BOOTSTRAP_ADMIN_PASSWORD`; the API refuses to start without them.
+- CORS allowlist through `CORS_ALLOWED_ORIGINS`.
+- Server-side module allowlists; unknown modules are rejected.
+- Supabase service role key is backend-only and must never be exposed to Vercel.
+
+## Local Backend
+
+Create `backend/.env` from `backend/.env.example` and set real local secrets:
 
 ```powershell
 cd D:\frappe-ERp\OUTPUT\factorypulse-erp
-copy .env.example .env
-python -m backend.factory_erp.app
+copy backend\.env.example backend\.env
 ```
 
-Open http://127.0.0.1:8080 and sign in with the development credentials in `.env.example`, or set your own `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD`.
-
-## Tests
+Run the backend:
 
 ```powershell
-cd D:\frappe-ERp\OUTPUT\factorypulse-erp
-python -m unittest discover -s backend\tests
+cd D:\frappe-ERp\OUTPUT\factorypulse-erp\backend
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000
 ```
+
+## Local Frontend
+
+```powershell
+cd D:\frappe-ERp\OUTPUT\factorypulse-erp\frontend
+npm ci
+$env:NEXT_PUBLIC_API_BASE="http://127.0.0.1:8000"
+npm run dev
+```
+
+Open `http://127.0.0.1:3000` and sign in with the credentials set in `backend/.env`.
 
 ## Docker
+
+Docker Compose reads `backend/.env`:
 
 ```powershell
 cd D:\frappe-ERp\OUTPUT\factorypulse-erp
 docker compose up --build
 ```
 
-## Production notes
+## Production Deployment
 
-- Replace all bootstrap secrets before deployment.
-- Put the app behind TLS.
-- Set `APP_ENV=production`.
-- Set `CORS_ALLOWED_ORIGINS` to exact production origins.
-- Use a managed database for production-scale use. SQLite is suitable for review, pilots, and single-node demos only.
-- For a Frappe/ERPNext production program, map the module catalog and workflows in `docs/final` into custom DocTypes, fixtures, workflows, reports, and permission rules.
+Use the detailed guide in `docs/deployment/RAILWAY_SUPABASE_VERCEL.md`.
 
+Production target:
 
-## API reference
+- Railway: deploy backend with `APP_ENV=production`, `APP_SECRET_KEY`, bootstrap admin credentials, `CORS_ALLOWED_ORIGINS`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY`.
+- Supabase: run `supabase/schema.sql` before pointing Railway to the database.
+- Vercel: deploy `frontend/` with `NEXT_PUBLIC_API_BASE` set to the Railway backend URL.
 
-- Live metadata: http://127.0.0.1:8080/api/openapi.json
-- Static artifact: `docs/api/openapi.json`
-- Authenticated examples use `Authorization: Bearer <token>`.
-- Writes reject unknown fields and create operations support `Idempotency-Key`.
+## Verification
 
-## Verification evidence
+Current verification commands:
 
 ```powershell
-python -m py_compile backendactory_erppp.py backendactory_erp\store.py backendactory_erp\security.py
-python -m unittest discover -s backend	ests
-node --check frontendpp.js
-python scripts\smoke_test.py --base-url http://127.0.0.1:8080
+python -m py_compile backend\main.py backend\database.py
+cd frontend
+npm ci
+npm run lint
+npm run build
 ```
 
-
-## Native Frappe app path
-
-A native custom Frappe app scaffold is included at `frappe_app/` for the ERPNext/Frappe deployment track. It includes 36 DocType metadata files, hooks, install logic, permission helpers, whitelisted API methods, role fixtures, metadata validator, and bench install scripts.
-
-Quick local checks:
-
-```powershell
-cd D:rappe-ERp\OUTPUTactorypulse-erprappe_app
-python toolsalidate_metadata.py
-Get-ChildItem -Recurse -File | Where-Object { $_.Extension -eq '.py' } | ForEach-Object { python -m py_compile $_.FullName }
-```
-
-Bench install helper:
-
-```powershell
-cd D:rappe-ERp\OUTPUTactorypulse-erprappe_app
-.\scripts\install_in_bench.ps1 -BenchPath C:\path	orappe-bench -SiteName factorypulse.local
-```
-
-
-## Employee mobile app
-
-The SPA now includes an `Employee App` surface and PWA shell for worker self-service. It uses real secure APIs:
-
-- `GET /api/mobile/home`
-- `POST /api/mobile/check-in`
-- `POST /api/mobile/leave-request`
-- `POST /api/mobile/incident`
-- `POST /api/mobile/sos`
-
-The PWA files are `frontend/manifest.webmanifest` and `frontend/service-worker.js`.
+Docker verification requires Docker Desktop Linux engine to be reachable from the CLI.

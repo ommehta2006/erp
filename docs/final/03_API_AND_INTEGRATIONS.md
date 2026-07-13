@@ -1,6 +1,6 @@
 # API and Integrations
 
-Last verified: 2026-07-12. Release: v0.4.0-reference. Owner: FactoryPulse delivery team.
+Last verified: 2026-07-12. Release: v0.5.0-reference. Owner: FactoryPulse delivery team.
 
 API conventions: JSON by default, bearer token authentication, stable error envelope, bounded request bodies, resource field allowlists, tenant resolution from the signed token, server-side RBAC, idempotent creates with `Idempotency-Key`, and CSV export for permitted modules.
 

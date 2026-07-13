@@ -1,6 +1,6 @@
 # Database and Migrations
 
-Last verified: 2026-07-12. Release: v0.4.0-reference. Owner: FactoryPulse delivery team.
+Last verified: 2026-07-12. Release: v0.5.0-reference. Owner: FactoryPulse delivery team.
 
 Database: SQLite file configured by `APP_DATABASE`.
 

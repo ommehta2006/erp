@@ -1,6 +1,6 @@
 # Product and Features
 
-Last verified: 2026-07-12. Release: v0.4.0-reference. Owner: FactoryPulse delivery team.
+Last verified: 2026-07-12. Release: v0.5.0-reference. Owner: FactoryPulse delivery team.
 
 FactoryPulse ERP is a deploy-ready reference app for a cooperative sugar factory. It includes an authenticated ERP workspace, employee operations, factory production modules, tenant administration, secure APIs, tenant isolation, audit events, Docker packaging, native Frappe custom app scaffold, and final handoff documentation.
 

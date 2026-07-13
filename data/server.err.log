@@ -1,6 +1,0 @@
-127.0.0.1 - - [12/Jul/2026 21:43:11] "GET /api/health HTTP/1.1" 200 -
-127.0.0.1 - - [12/Jul/2026 21:43:32] "GET /api/health HTTP/1.1" 200 -
-127.0.0.1 - - [12/Jul/2026 21:43:32] "GET /manifest.webmanifest HTTP/1.1" 200 -
-127.0.0.1 - - [12/Jul/2026 21:43:32] "GET /api/openapi.json HTTP/1.1" 200 -
-127.0.0.1 - - [12/Jul/2026 21:43:32] "GET /service-worker.js HTTP/1.1" 200 -
-127.0.0.1 - - [12/Jul/2026 21:44:08] "GET /api/health HTTP/1.1" 200 -

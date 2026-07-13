@@ -1,6 +1,6 @@
 # Setup, Deployment, and Operations
 
-Last verified: 2026-07-12. Release: v0.4.0-reference. Owner: FactoryPulse delivery team.
+Last verified: 2026-07-12. Release: v0.5.0-reference. Owner: FactoryPulse delivery team.
 
 Local setup:
 
@@ -41,3 +41,6 @@ python toolsalidate_metadata.py
 A production Frappe deployment still requires a real bench, selected Frappe/ERPNext versions, database/cache services, TLS, secrets, backups, and owner authorization.
 
 PWA checks: verify `/manifest.webmanifest`, `/service-worker.js`, and the `Employee App` navigation item after login. Mobile actions must create records through `/api/mobile/*` and appear in audit events.
+
+
+v0.5 update: active deployment architecture is FastAPI backend on Railway, Next.js frontend on Vercel, and Supabase Postgres via `supabase/schema.sql`. The app is empty by default and department-first after login.

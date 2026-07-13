@@ -1,1 +1,0 @@
-"""FactoryPulse ERP backend package."""

@@ -1,0 +1,26 @@
+# Runtime secrets and env files
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+frontend/.env.local
+frontend/.env*.local
+!frontend/.env.example
+
+# Runtime data and logs
+data/*.sqlite3
+data/*.sqlite3-*
+data/*.log
+data/backups/
+
+# Python/Node generated files
+__pycache__/
+*.py[cod]
+frontend/node_modules/
+frontend/.next/
+
+# Local tooling noise
+.DS_Store
+Thumbs.db
