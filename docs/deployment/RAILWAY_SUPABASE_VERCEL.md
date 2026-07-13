@@ -3,13 +3,13 @@
 Target topology:
 
 - Railway: FastAPI backend from `backend/`
-- Supabase: production Postgres table `records`
+- Supabase: production Postgres schema with one table per ERP module
 - Vercel: Next frontend from `frontend/`
 
 Status in this package:
 
 - Backend is real API, authenticated, and connected to storage.
-- Storage uses Supabase when `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set.
+- Storage uses Supabase module tables when `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set.
 - Storage falls back to local SQLite for Docker/local testing.
 - Frontend calls backend through `NEXT_PUBLIC_API_BASE`.
 - App is empty by default. No demo seed records are inserted.
@@ -30,7 +30,7 @@ SUPABASE_SERVICE_ROLE_KEY=<service role key>
 Supabase setup:
 
 1. Open Supabase SQL editor.
-2. Run `supabase/schema.sql`.
+2. Run `supabase/schema.sql`. It creates 44 ERP module tables plus the legacy `records` compatibility table.
 3. Keep service role key only in Railway, never in Vercel.
 
 Vercel variables:

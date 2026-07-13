@@ -96,13 +96,13 @@ class Storage:
         self._require_resource(resource)
         limit = min(max(int(limit), 1), 500)
         if self.mode == "supabase":
-            response = self.client.table("records").select("*").eq("resource", resource).limit(limit).execute()
-            return [self._normalize(row) for row in response.data]
+            response = self.client.table(resource).select("*").order("updated_at", desc=True).limit(limit).execute()
+            return [self._normalize(row, resource) for row in response.data]
         con = sqlite3.connect(self.db_path)
         con.row_factory = sqlite3.Row
         rows = con.execute("select * from records where resource = ? order by updated_at desc limit ?", (resource, limit)).fetchall()
         con.close()
-        return [self._normalize(dict(row)) for row in rows]
+        return [self._normalize(dict(row), resource) for row in rows]
 
     def create_record(self, resource: str, payload: dict[str, Any]):
         fields = self._require_resource(resource)
@@ -113,8 +113,10 @@ class Storage:
         now = int(time.time())
         row = {"id": str(uuid.uuid4()), "resource": resource, "data": clean, "status": clean.get("status", "Open"), "created_at": now, "updated_at": now}
         if self.mode == "supabase":
-            response = self.client.table("records").insert(row).execute()
-            return self._normalize(response.data[0])
+            module_row = {key: clean.get(key, "") for key in fields if key != "status"}
+            module_row["status"] = clean.get("status", "Open")
+            response = self.client.table(resource).insert(module_row).execute()
+            return self._normalize(response.data[0], resource)
         con = sqlite3.connect(self.db_path)
         con.execute("insert into records values (?, ?, ?, ?, ?, ?)", (row["id"], resource, __import__("json").dumps(clean, sort_keys=True), row["status"], now, now))
         con.commit()
@@ -136,10 +138,15 @@ class Storage:
             raise KeyError(resource)
         return MODULE_FIELDS[resource]
 
-    def _normalize(self, row: dict[str, Any]):
+    def _normalize(self, row: dict[str, Any], resource: str | None = None):
+        resource = resource or row.get("resource")
         data = row.get("data", {})
         if isinstance(data, str):
             data = __import__("json").loads(data)
-        return {"id": row.get("id"), "resource": row.get("resource"), "data": data, "status": row.get("status", data.get("status", "Open")), "created_at": row.get("created_at"), "updated_at": row.get("updated_at")}
+        if not data and resource in MODULE_FIELDS:
+            data = {field: row.get(field, "") for field in MODULE_FIELDS[resource] if field != "status"}
+        status = row.get("status", data.get("status", "Open"))
+        data.setdefault("status", status)
+        return {"id": row.get("id"), "resource": resource, "data": data, "status": status, "created_at": row.get("created_at"), "updated_at": row.get("updated_at")}
 
 storage = Storage()
