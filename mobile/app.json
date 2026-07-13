@@ -9,14 +9,26 @@
     "newArchEnabled": true,
     "assetBundlePatterns": ["**/*"],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "FactoryPulse uses your location for Day In, Day Out, and working-hours attendance tracking after you check in."
+      }
     },
     "android": {
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
       "adaptiveIcon": {
         "backgroundColor": "#0f172a"
       },
       "edgeToEdgeEnabled": true
     },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "FactoryPulse uses your location for Day In, Day Out, and working-hours attendance tracking after you check in."
+        }
+      ]
+    ],
     "extra": {
       "apiBase": "https://erp-production-8664.up.railway.app"
     }

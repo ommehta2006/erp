@@ -16,7 +16,7 @@ except Exception:
 ROOT = Path(__file__).resolve().parents[1]
 
 DEPARTMENTS = {
-    "hr": {"name": "HR & Employee", "modules": ["employees", "attendance", "leave_requests", "shifts", "departments", "payroll_runs", "recruitment", "performance_reviews", "training_records", "expense_claims", "visitor_passes"]},
+    "hr": {"name": "HR & Employee", "modules": ["employees", "attendance", "employee_locations", "leave_requests", "leave_balances", "holiday_calendar", "salary_slips", "shifts", "departments", "payroll_runs", "recruitment", "performance_reviews", "training_records", "expense_claims", "visitor_passes"]},
     "finance": {"name": "Finance & Accounts", "modules": ["invoices", "purchase_orders", "sales_orders", "payroll_runs", "budgets", "tax_records", "farmer_payments", "approvals"]},
     "cane": {"name": "Cane & Farmer", "modules": ["farmers", "cane_registrations", "harvest_plans", "vehicles", "weighbridge_tickets", "farmer_payments"]},
     "manufacturing": {"name": "Manufacturing", "modules": ["production_batches", "boiler_logs", "packaging_runs", "byproducts", "power_generation", "distillery_batches", "ethanol_dispatches", "energy_meters"]},
@@ -34,7 +34,11 @@ DEPARTMENTS = {
 MODULE_FIELDS = {
     "employees": ["employee_code", "full_name", "department", "role", "phone", "email", "shift", "status"],
     "attendance": ["employee_code", "date", "shift", "check_in", "check_out", "gps_area", "status"],
+    "employee_locations": ["employee_code", "timestamp", "latitude", "longitude", "accuracy", "event", "status"],
     "leave_requests": ["employee_code", "leave_type", "from_date", "to_date", "reason", "status"],
+    "leave_balances": ["employee_code", "leave_type", "opening_balance", "used_days", "available_days", "period", "status"],
+    "holiday_calendar": ["holiday_no", "date", "name", "holiday_type", "location", "status"],
+    "salary_slips": ["employee_code", "period", "gross_pay", "deductions", "net_pay", "payment_date", "status"],
     "shifts": ["name", "start_time", "end_time", "department", "supervisor", "status"],
     "departments": ["name", "head", "cost_center", "location", "status"],
     "payroll_runs": ["run_no", "period", "department", "gross_pay", "deductions", "net_pay", "approval_status", "status"],
@@ -111,6 +115,60 @@ REQUIRED_FIELDS = {
 }
 
 STATUS_VALUES = {"Open", "Active", "Pending", "Approved", "Rejected", "Completed", "Closed", "On Hold", "Critical"}
+NUMERIC_FIELD_WORDS = {
+    "accuracy",
+    "acres",
+    "alcohol",
+    "amount",
+    "available",
+    "bags",
+    "balance",
+    "battery",
+    "bod",
+    "brix",
+    "budget",
+    "capacity",
+    "cod",
+    "deductions",
+    "export",
+    "feed",
+    "generation",
+    "gross",
+    "intensity",
+    "kl",
+    "kwh",
+    "latitude",
+    "level",
+    "litres",
+    "longitude",
+    "molasses",
+    "net",
+    "opening",
+    "particulate",
+    "pay",
+    "percent",
+    "ph",
+    "pol",
+    "power",
+    "pressure",
+    "purity",
+    "quantity",
+    "rate",
+    "reading",
+    "recovery",
+    "score",
+    "spent",
+    "tare",
+    "ton",
+    "tonnage",
+    "used",
+    "utilization",
+    "variance",
+    "volume",
+    "water",
+    "weight",
+    "yield",
+}
 
 class Storage:
     def __init__(self):
@@ -342,7 +400,8 @@ class Storage:
                 continue
             if "email" in lowered and ("@" not in value or "." not in value.rsplit("@", 1)[-1]):
                 raise ValueError(f"{field} must be a valid email address")
-            if any(token in lowered for token in ["amount", "budget", "spent", "quantity", "percent", "score", "weight", "tonnage", "kwh", "litres", "kl_", "ph", "bod", "cod"]):
+            words = set(lowered.split("_"))
+            if words & NUMERIC_FIELD_WORDS:
                 try:
                     number = float(value)
                 except ValueError as exc:

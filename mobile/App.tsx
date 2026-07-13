@@ -1,6 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import * as LocalAuthentication from "expo-local-authentication";
+import * as Location from "expo-location";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useMemo, useState } from "react";
 import {
@@ -32,6 +34,22 @@ type MobileSummary = {
   priority_work: PriorityWork[];
   departments: DepartmentCard[];
 };
+type EmployeeSummary = {
+  employee_code: string;
+  attendance: { checked_in: boolean; date: string; day_in_time: string; day_out_time: string; late_mark: boolean; records_today: number };
+  calendar: AttendanceCalendar;
+  leave: { pending: number; approved: number; balances: Record<string, string>[] };
+  salary: { latest: Record<string, string> | null; count: number };
+  tracking: { last_location: Record<string, string> | null; ping_count: number };
+};
+type AttendanceCalendar = {
+  month: string;
+  present: number;
+  absent: number;
+  leave: number;
+  holiday: number;
+  days: { date: string; day: number; status: string }[];
+};
 type Department = {
   id: string;
   name: string;
@@ -47,14 +65,15 @@ type Module = {
 type RecordItem = { id: string; resource?: string; data: Record<string, string>; status: string };
 type Screen =
   | { name: "home" }
+  | { name: "work" }
   | { name: "departments" }
   | { name: "department"; id: string }
   | { name: "create"; departmentId: string; module: Module }
   | { name: "profile" };
 
 const QUICK_ACTIONS = [
-  { title: "Mark Attendance", departmentId: "hr", resource: "attendance", icon: "finger-print", preset: { status: "Open" } },
-  { title: "Leave Request", departmentId: "hr", resource: "leave_requests", icon: "calendar", preset: { status: "Pending" } },
+  { title: "Day In / Out", departmentId: "hr", resource: "attendance", icon: "finger-print", preset: { status: "Open" } },
+  { title: "Apply Leave", departmentId: "hr", resource: "leave_requests", icon: "calendar", preset: { status: "Pending" } },
   { title: "Expense Claim", departmentId: "hr", resource: "expense_claims", icon: "receipt", preset: { status: "Pending" } },
   { title: "Safety Incident", departmentId: "quality", resource: "incidents", icon: "warning", preset: { status: "Critical" } },
   { title: "Maintenance Task", departmentId: "maintenance", resource: "maintenance_work_orders", icon: "construct", preset: { status: "Open" } },
@@ -137,6 +156,7 @@ export default function App() {
     <SafeAreaView style={styles.shell}>
       <StatusBar style="light" />
       {screen.name === "home" && <HomeScreen token={token} user={user} navigate={setScreen} />}
+      {screen.name === "work" && <WorkScreen token={token} navigate={setScreen} />}
       {screen.name === "departments" && <DepartmentListScreen token={token} navigate={setScreen} />}
       {screen.name === "department" && <DepartmentScreen token={token} departmentId={screen.id} navigate={setScreen} />}
       {screen.name === "create" && <CreateRecordScreen token={token} departmentId={screen.departmentId} module={screen.module} navigate={setScreen} />}
@@ -226,7 +246,7 @@ function HomeScreen({ token, user, navigate }: { token: string; user: User; navi
           <Pressable
             key={action.resource}
             style={styles.quickCard}
-            onPress={() => navigate({ name: "department", id: action.departmentId })}
+            onPress={() => action.resource === "attendance" || action.resource === "leave_requests" ? navigate({ name: "work" }) : navigate({ name: "department", id: action.departmentId })}
           >
             <Ionicons name={action.icon} size={24} color="#0f766e" />
             <Text style={styles.quickTitle}>{action.title}</Text>
@@ -253,6 +273,193 @@ function HomeScreen({ token, user, navigate }: { token: string; user: User; navi
       ))}
     </ScreenScroll>
   );
+}
+
+function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Screen) => void }) {
+  const { data, loading, error, refresh } = useApi<EmployeeSummary>(token, "/api/mobile/employee/summary");
+  const [busy, setBusy] = useState(false);
+  const [leaveType, setLeaveType] = useState("Casual Leave");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [reason, setReason] = useState("");
+  const [tracking, setTracking] = useState(false);
+
+  useEffect(() => {
+    if (!tracking || !data?.attendance.checked_in) return;
+    const timer = setInterval(() => {
+      pingLocation(token, "working_hours").catch(() => undefined);
+    }, 5 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [data?.attendance.checked_in, token, tracking]);
+
+  async function attendanceAction(kind: "day-in" | "day-out") {
+    setBusy(true);
+    try {
+      await requireThumb();
+      const location = await currentLocation();
+      const response = await fetch(`${API_BASE}/api/mobile/employee/${kind}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          shift: "General",
+          latitude: location?.coords.latitude,
+          longitude: location?.coords.longitude,
+          accuracy: location?.coords.accuracy,
+        })
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.detail || "Attendance action failed");
+      }
+      if (kind === "day-in") setTracking(true);
+      if (kind === "day-out") setTracking(false);
+      refresh();
+    } catch (err) {
+      Alert.alert("Attendance", err instanceof Error ? err.message : "Attendance action failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitLeave() {
+    if (!fromDate || !toDate || !reason.trim()) {
+      Alert.alert("Leave request", "From date, to date, and reason are required.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/mobile/employee/leave`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ leave_type: leaveType, from_date: fromDate, to_date: toDate, reason })
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.detail || "Leave apply failed");
+      }
+      setReason("");
+      Alert.alert("Leave request", "Leave request saved to ERP for approval.");
+      refresh();
+    } catch (err) {
+      Alert.alert("Leave request", err instanceof Error ? err.message : "Leave apply failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <ScreenScroll refresh={refresh} loading={loading}>
+      <TopBar title="Employee Work" subtitle="Attendance, leave, salary, calendar and location controls" />
+      {error ? <ErrorBanner message={error} /> : null}
+
+      <LinearGradient colors={data?.attendance.checked_in ? ["#065f46", "#0f766e"] : ["#0f172a", "#334155"]} style={styles.attendanceCard}>
+        <View style={styles.moduleHeader}>
+          <View>
+            <Text style={styles.attendanceLabel}>Today</Text>
+            <Text style={styles.attendanceTitle}>{data?.attendance.checked_in ? "Checked In" : data?.attendance.day_out_time ? "Shift Completed" : "Ready for Day In"}</Text>
+          </View>
+          <Ionicons name="finger-print" size={34} color="#ccfbf1" />
+        </View>
+        <View style={styles.attendanceTimes}>
+          <TimeTile label="Day In" value={data?.attendance.day_in_time || "--:--"} tone="green" />
+          <TimeTile label="Day Out" value={data?.attendance.day_out_time || "--:--"} tone="blue" />
+          <TimeTile label="Late" value={data?.attendance.late_mark ? "Yes" : "No"} tone={data?.attendance.late_mark ? "red" : "green"} />
+        </View>
+        <View style={styles.actionRow}>
+          <Pressable style={[styles.lightButton, busy && styles.disabledButton]} disabled={busy} onPress={() => attendanceAction("day-in")}>
+            <Text style={styles.lightButtonText}>Thumb Day In</Text>
+          </Pressable>
+          <Pressable style={[styles.lightButton, busy && styles.disabledButton]} disabled={busy} onPress={() => attendanceAction("day-out")}>
+            <Text style={styles.lightButtonText}>Thumb Day Out</Text>
+          </Pressable>
+        </View>
+        <Pressable style={styles.trackButton} onPress={() => setTracking((value) => !value)}>
+          <Ionicons name={tracking ? "location" : "location-outline"} size={18} color="#ffffff" />
+          <Text style={styles.trackButtonText}>{tracking ? "Working-hours location tracking active" : "Enable working-hours location tracking"}</Text>
+        </Pressable>
+      </LinearGradient>
+
+      <SectionHeader title="This Month" />
+      <View style={styles.calendarStats}>
+        <CountTile label="Present" value={data?.calendar.present || 0} color="#16a34a" />
+        <CountTile label="Absent" value={data?.calendar.absent || 0} color="#dc2626" />
+        <CountTile label="Leave" value={data?.calendar.leave || 0} color="#9333ea" />
+        <CountTile label="Holiday" value={data?.calendar.holiday || 0} color="#0284c7" />
+      </View>
+      <CalendarGrid days={data?.calendar.days || []} />
+
+      <SectionHeader title="Leave" />
+      <View style={styles.largeCard}>
+        <Text style={styles.cardMeta}>Pending {data?.leave.pending || 0} · Approved {data?.leave.approved || 0}</Text>
+        <View style={styles.statusRow}>
+          {["Casual Leave", "Sick Leave", "Earned Leave", "Comp Off"].map((type) => (
+            <Pressable key={type} style={[styles.statusChip, leaveType === type && styles.statusChipActive]} onPress={() => setLeaveType(type)}>
+              <Text style={[styles.statusChipText, leaveType === type && styles.statusChipTextActive]}>{type}</Text>
+            </Pressable>
+          ))}
+        </View>
+        <Input label="From date" value={fromDate} onChangeText={setFromDate} placeholder="YYYY-MM-DD" />
+        <Input label="To date" value={toDate} onChangeText={setToDate} placeholder="YYYY-MM-DD" />
+        <Input label="Reason" value={reason} onChangeText={setReason} placeholder="Reason for leave" />
+        <Pressable style={[styles.primaryButton, busy && styles.disabledButton]} disabled={busy} onPress={submitLeave}>
+          <Text style={styles.primaryButtonText}>Apply Leave</Text>
+        </Pressable>
+      </View>
+
+      <SectionHeader title="Salary" />
+      <View style={styles.largeCard}>
+        {data?.salary.latest ? (
+          <>
+            <Text style={styles.cardTitle}>{data.salary.latest.period || "Latest salary slip"}</Text>
+            <Text style={styles.salaryAmount}>₹{data.salary.latest.net_pay || "0"}</Text>
+            <Text style={styles.cardMeta}>Gross ₹{data.salary.latest.gross_pay || "0"} · Deductions ₹{data.salary.latest.deductions || "0"}</Text>
+          </>
+        ) : (
+          <Text style={styles.mutedText}>No salary slip released yet. HR payroll records will appear here from the live ERP.</Text>
+        )}
+      </View>
+
+      <Pressable style={styles.secondaryButton} onPress={() => navigate({ name: "department", id: "hr" })}>
+        <Text style={styles.secondaryButtonText}>Open Full HR Workspace</Text>
+      </Pressable>
+    </ScreenScroll>
+  );
+}
+
+async function requireThumb() {
+  const compatible = await LocalAuthentication.hasHardwareAsync();
+  const enrolled = await LocalAuthentication.isEnrolledAsync();
+  if (!compatible || !enrolled) {
+    throw new Error("Fingerprint or device lock is not enrolled on this phone.");
+  }
+  const result = await LocalAuthentication.authenticateAsync({
+    promptMessage: "Confirm with thumb",
+    fallbackLabel: "Use device passcode",
+    disableDeviceFallback: false,
+  });
+  if (!result.success) throw new Error("Thumb verification cancelled or failed.");
+}
+
+async function currentLocation() {
+  const permission = await Location.requestForegroundPermissionsAsync();
+  if (permission.status !== "granted") {
+    throw new Error("Location permission is required for day-in/day-out.");
+  }
+  return Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+}
+
+async function pingLocation(token: string, event: string) {
+  const location = await currentLocation();
+  await fetch(`${API_BASE}/api/mobile/employee/location`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+      accuracy: location.coords.accuracy,
+      event,
+    })
+  });
 }
 
 function DepartmentListScreen({ token, navigate }: { token: string; navigate: (screen: Screen) => void }) {
@@ -470,6 +677,7 @@ function ScreenScroll({ children, refresh, loading }: { children: React.ReactNod
 function BottomNav({ current, navigate }: { current: Screen["name"]; navigate: (screen: Screen) => void }) {
   const items = [
     { key: "home", label: "Home", icon: "home", screen: { name: "home" } as Screen },
+    { key: "work", label: "Work", icon: "finger-print", screen: { name: "work" } as Screen },
     { key: "departments", label: "ERP", icon: "grid", screen: { name: "departments" } as Screen },
     { key: "profile", label: "Control", icon: "person-circle", screen: { name: "profile" } as Screen }
   ];
@@ -546,6 +754,44 @@ function PriorityCard({ item }: { item: PriorityWork }) {
   );
 }
 
+function TimeTile({ label, value, tone }: { label: string; value: string; tone: "green" | "blue" | "red" }) {
+  const color = tone === "green" ? "#bbf7d0" : tone === "blue" ? "#bae6fd" : "#fecaca";
+  return (
+    <View style={styles.timeTile}>
+      <Text style={styles.timeLabel}>{label}</Text>
+      <Text style={[styles.timeValue, { color }]}>{value}</Text>
+    </View>
+  );
+}
+
+function CountTile({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <View style={styles.countTile}>
+      <Text style={[styles.countValue, { color }]}>{value}</Text>
+      <Text style={styles.countLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function CalendarGrid({ days }: { days: AttendanceCalendar["days"] }) {
+  const colors: Record<string, string> = {
+    present: "#16a34a",
+    absent: "#dc2626",
+    leave: "#9333ea",
+    holiday: "#0284c7",
+    weekly_off: "#64748b",
+  };
+  return (
+    <View style={styles.calendarGrid}>
+      {days.map((day) => (
+        <View key={day.date} style={[styles.calendarDay, { backgroundColor: colors[day.status] || "#94a3b8" }]}>
+          <Text style={styles.calendarDayText}>{day.day}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function RecordPreview({ module, item }: { module: Module; item: RecordItem }) {
   const firstFields = module.fields.filter((field) => field !== "status").slice(0, 3);
   return (
@@ -585,6 +831,26 @@ const styles = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: "#f1f5f9" },
   scrollContent: { padding: 16 },
   heroCard: { borderRadius: 22, padding: 18 },
+  attendanceCard: { borderRadius: 22, padding: 18 },
+  attendanceLabel: { color: "#ccfbf1", fontSize: 12, fontWeight: "800", textTransform: "uppercase" },
+  attendanceTitle: { marginTop: 4, color: "white", fontSize: 24, fontWeight: "900" },
+  attendanceTimes: { flexDirection: "row", gap: 8, marginTop: 16 },
+  timeTile: { flex: 1, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.12)", padding: 10 },
+  timeLabel: { color: "#cbd5e1", fontSize: 11, fontWeight: "700" },
+  timeValue: { marginTop: 5, fontSize: 16, fontWeight: "900" },
+  actionRow: { flexDirection: "row", gap: 10, marginTop: 14 },
+  lightButton: { flex: 1, minHeight: 46, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.92)" },
+  lightButtonText: { color: "#0f172a", fontSize: 13, fontWeight: "900" },
+  trackButton: { marginTop: 12, minHeight: 42, borderRadius: 14, borderWidth: 1, borderColor: "rgba(255,255,255,0.2)", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  trackButtonText: { color: "white", fontSize: 12, fontWeight: "800" },
+  calendarStats: { flexDirection: "row", gap: 8, marginBottom: 10 },
+  countTile: { flex: 1, borderRadius: 14, backgroundColor: "white", padding: 10, borderWidth: 1, borderColor: "#e2e8f0" },
+  countValue: { fontSize: 19, fontWeight: "900" },
+  countLabel: { color: "#64748b", fontSize: 11, fontWeight: "700" },
+  calendarGrid: { flexDirection: "row", flexWrap: "wrap", gap: 6, borderRadius: 18, backgroundColor: "white", padding: 12, borderWidth: 1, borderColor: "#e2e8f0" },
+  calendarDay: { width: 34, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  calendarDayText: { color: "white", fontSize: 12, fontWeight: "900" },
+  salaryAmount: { marginTop: 8, color: "#0f766e", fontSize: 30, fontWeight: "900" },
   heroEyebrow: { color: "#99f6e4", fontSize: 12, fontWeight: "800", textTransform: "uppercase" },
   heroTitle: { marginTop: 8, color: "white", fontSize: 26, fontWeight: "800", lineHeight: 31 },
   heroCopy: { marginTop: 8, color: "#cbd5e1", fontSize: 14, lineHeight: 20 },
