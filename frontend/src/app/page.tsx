@@ -33,54 +33,22 @@ type Dashboard = {
 };
 
 const DEPARTMENT_STYLES = [
-  {
-    badge: "border-teal-200 bg-teal-50 text-teal-800",
-    line: "bg-teal-500",
-    hover: "hover:border-teal-300 hover:shadow-teal-100",
-  },
-  {
-    badge: "border-sky-200 bg-sky-50 text-sky-800",
-    line: "bg-sky-500",
-    hover: "hover:border-sky-300 hover:shadow-sky-100",
-  },
-  {
-    badge: "border-emerald-200 bg-emerald-50 text-emerald-800",
-    line: "bg-emerald-500",
-    hover: "hover:border-emerald-300 hover:shadow-emerald-100",
-  },
-  {
-    badge: "border-amber-200 bg-amber-50 text-amber-800",
-    line: "bg-amber-500",
-    hover: "hover:border-amber-300 hover:shadow-amber-100",
-  },
-  {
-    badge: "border-rose-200 bg-rose-50 text-rose-800",
-    line: "bg-rose-500",
-    hover: "hover:border-rose-300 hover:shadow-rose-100",
-  },
-  {
-    badge: "border-violet-200 bg-violet-50 text-violet-800",
-    line: "bg-violet-500",
-    hover: "hover:border-violet-300 hover:shadow-violet-100",
-  },
-  {
-    badge: "border-cyan-200 bg-cyan-50 text-cyan-800",
-    line: "bg-cyan-500",
-    hover: "hover:border-cyan-300 hover:shadow-cyan-100",
-  },
-  {
-    badge: "border-lime-200 bg-lime-50 text-lime-800",
-    line: "bg-lime-500",
-    hover: "hover:border-lime-300 hover:shadow-lime-100",
-  },
+  { badge: "border-teal-200 bg-teal-50 text-teal-800", rail: "bg-teal-600", text: "text-teal-700", border: "hover:border-teal-300" },
+  { badge: "border-sky-200 bg-sky-50 text-sky-800", rail: "bg-sky-600", text: "text-sky-700", border: "hover:border-sky-300" },
+  { badge: "border-emerald-200 bg-emerald-50 text-emerald-800", rail: "bg-emerald-600", text: "text-emerald-700", border: "hover:border-emerald-300" },
+  { badge: "border-amber-200 bg-amber-50 text-amber-800", rail: "bg-amber-500", text: "text-amber-700", border: "hover:border-amber-300" },
+  { badge: "border-rose-200 bg-rose-50 text-rose-800", rail: "bg-rose-500", text: "text-rose-700", border: "hover:border-rose-300" },
+  { badge: "border-indigo-200 bg-indigo-50 text-indigo-800", rail: "bg-indigo-600", text: "text-indigo-700", border: "hover:border-indigo-300" },
+  { badge: "border-cyan-200 bg-cyan-50 text-cyan-800", rail: "bg-cyan-600", text: "text-cyan-700", border: "hover:border-cyan-300" },
+  { badge: "border-lime-200 bg-lime-50 text-lime-800", rail: "bg-lime-600", text: "text-lime-700", border: "hover:border-lime-300" },
 ];
 
-const QUICK_LINKS = [
-  { label: "HR", href: "/hr", style: "border-teal-200 bg-teal-50 text-teal-800 hover:border-teal-500" },
-  { label: "Finance", href: "/finance", style: "border-sky-200 bg-sky-50 text-sky-800 hover:border-sky-500" },
-  { label: "Reports", href: "/reports", style: "border-indigo-200 bg-indigo-50 text-indigo-800 hover:border-indigo-500" },
-  { label: "Security", href: "/admin/security", style: "border-rose-200 bg-rose-50 text-rose-800 hover:border-rose-500" },
-  { label: "Mobile", href: "/mobile", style: "border-amber-200 bg-amber-50 text-amber-800 hover:border-amber-500" },
+const QUICK_ACTIONS = [
+  { label: "HR Control", body: "Employees, attendance, leave, shifts, geofence, and policy settings.", href: "/hr", tone: "border-teal-200 bg-teal-50 text-teal-900" },
+  { label: "Finance", body: "Payroll runs, salary validation, approvals, and finance ledgers.", href: "/finance", tone: "border-sky-200 bg-sky-50 text-sky-900" },
+  { label: "Reports", body: "Factory analytics, exports, audit-ready operational reports.", href: "/reports", tone: "border-indigo-200 bg-indigo-50 text-indigo-900" },
+  { label: "Security", body: "Roles, sessions, approvals, audit logs, and access control.", href: "/admin/security", tone: "border-rose-200 bg-rose-50 text-rose-900" },
+  { label: "Mobile App", body: "Employee mobile portal for attendance, leave, salary, and alerts.", href: "/mobile", tone: "border-amber-200 bg-amber-50 text-amber-900" },
 ];
 
 function departmentInitials(name: string) {
@@ -152,24 +120,18 @@ export default function HomePage() {
   ];
 
   return (
-    <main className="min-h-screen bg-[#f5f7fb] text-slate-950">
+    <main className="min-h-screen bg-[#f6f8fb] text-slate-950">
       <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase text-teal-700">FactoryPulse ERP</p>
-            <h1 className="mt-1 text-2xl font-semibold text-slate-950">Department control center</h1>
-            <p className="mt-1 text-sm text-slate-500">Open every sugar factory department from one live ERP home.</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">FactoryPulse ERP</p>
+            <h1 className="mt-1 text-2xl font-semibold text-slate-950">All departments</h1>
+            <p className="mt-1 text-sm text-slate-500">A live card layout for every sugar factory department and workflow.</p>
           </div>
-
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">
               DB {dashboard?.database || "checking"}
             </span>
-            {QUICK_LINKS.map((link) => (
-              <Link key={link.href} className={`rounded-lg border px-3 py-2 text-sm font-medium ${link.style}`} href={link.href}>
-                {link.label}
-              </Link>
-            ))}
             <button
               className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
               onClick={() => {
@@ -186,19 +148,19 @@ export default function HomePage() {
       <section className="mx-auto max-w-7xl px-4 py-6">
         {error && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
 
-        <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
-          <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <p className="text-sm font-semibold text-teal-700">All departments</p>
-                <h2 className="mt-2 text-3xl font-semibold text-slate-950">Department cards</h2>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-                  Browse every department as a live card with module coverage, record counts, and priority work pulled from the real ERP API.
+        <section className="grid gap-4 lg:grid-cols-[1fr_360px]">
+          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+              <div className="max-w-3xl">
+                <p className="text-sm font-semibold text-teal-700">ERP home</p>
+                <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Department card board</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Open HR, finance, procurement, inventory, production, quality, sales, maintenance, admin, reports, and mobile workflows from one real API dashboard.
                 </p>
               </div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[440px]">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:min-w-[520px]">
                 {stats.map((item) => (
-                  <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
+                  <div key={item.label} className="border-l-2 border-slate-200 pl-3">
                     <div className="text-xs font-medium text-slate-500">{item.label}</div>
                     <div className="mt-1 text-2xl font-semibold text-slate-950">{item.value}</div>
                   </div>
@@ -217,15 +179,15 @@ export default function HomePage() {
                 {Object.entries(dashboard?.status_counts || {})
                   .slice(0, 4)
                   .map(([status, count]) => (
-                    <span key={status} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">
+                    <span key={status} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700">
                       {status}: {count}
                     </span>
                   ))}
               </div>
             </div>
-          </section>
+          </div>
 
-          <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <aside className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-amber-700">Priority work</p>
@@ -252,68 +214,87 @@ export default function HomePage() {
                 ))
               )}
             </div>
-          </section>
-        </div>
+          </aside>
+        </section>
 
-        <section className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        <section className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {QUICK_ACTIONS.map((action) => (
+            <Link key={action.href} href={action.href} className={`rounded-lg border p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${action.tone}`}>
+              <div className="text-sm font-semibold">{action.label}</div>
+              <p className="mt-2 line-clamp-2 text-xs leading-5 opacity-80">{action.body}</p>
+            </Link>
+          ))}
+        </section>
+
+        <section className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-500">Department directory</p>
+            <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{departments.length} cards</h2>
+          </div>
+          <Link href="/reports" className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-center text-sm font-semibold text-slate-800 hover:border-teal-600 sm:w-auto">
+            Open reports
+          </Link>
+        </section>
+
+        <section className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {departments.map((department, index) => {
             const style = styleFor(index);
             const priorityCount = priorityByDepartment.get(department.name) || 0;
-            const modulePreview = department.modules.slice(0, 5);
+            const modulePreview = department.modules.slice(0, 6);
 
             return (
               <Link
                 key={department.id}
                 href={`/departments/${department.id}`}
-                className={`group relative flex min-h-[320px] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-xl ${style.hover}`}
+                className={`group relative flex min-h-[340px] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-xl ${style.border}`}
               >
-                <div className={`absolute left-0 top-0 h-1 w-full ${style.line}`} />
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border text-sm font-black shadow-sm ${style.badge}`}>
-                      {departmentInitials(department.name)}
+                <div className={`h-1.5 w-full ${style.rail}`} />
+                <div className="flex flex-1 flex-col p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border text-sm font-black shadow-sm ${style.badge}`}>
+                        {departmentInitials(department.name)}
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="truncate text-lg font-semibold text-slate-950">{department.name}</h3>
+                        <p className="mt-1 line-clamp-2 min-h-10 text-sm leading-5 text-slate-600">{department.description}</p>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <h3 className="truncate text-lg font-semibold text-slate-950">{department.name}</h3>
-                      <p className="mt-1 line-clamp-2 min-h-10 text-sm leading-5 text-slate-600">{department.description}</p>
+                    <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">Live</span>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-3 divide-x divide-slate-100 border-y border-slate-100 py-3">
+                    <div className="pr-3">
+                      <div className="text-xl font-semibold text-slate-950">{department.module_count}</div>
+                      <div className="text-xs text-slate-500">Modules</div>
+                    </div>
+                    <div className="px-3">
+                      <div className="text-xl font-semibold text-slate-950">{department.record_count}</div>
+                      <div className="text-xs text-slate-500">Records</div>
+                    </div>
+                    <div className="pl-3">
+                      <div className="text-xl font-semibold text-slate-950">{priorityCount}</div>
+                      <div className="text-xs text-slate-500">Priority</div>
                     </div>
                   </div>
-                  <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                    Live
-                  </span>
-                </div>
 
-                <div className="mt-4 grid grid-cols-3 gap-2">
-                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                    <div className="text-xl font-semibold text-slate-950">{department.module_count}</div>
-                    <div className="text-xs text-slate-500">Modules</div>
+                  <div className="mt-4 flex flex-1 flex-wrap content-start gap-2">
+                    {modulePreview.map((module) => (
+                      <span key={module.resource} className="max-w-full truncate rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-700">
+                        {module.label} <span className="ml-1 text-slate-400">{module.count}</span>
+                      </span>
+                    ))}
+                    {department.modules.length > modulePreview.length && (
+                      <span className="rounded-lg bg-slate-950 px-2.5 py-1.5 text-xs font-medium text-white">
+                        +{department.modules.length - modulePreview.length} more
+                      </span>
+                    )}
                   </div>
-                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                    <div className="text-xl font-semibold text-slate-950">{department.record_count}</div>
-                    <div className="text-xs text-slate-500">Records</div>
-                  </div>
-                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                    <div className="text-xl font-semibold text-slate-950">{priorityCount}</div>
-                    <div className="text-xs text-slate-500">Priority</div>
-                  </div>
-                </div>
 
-                <div className="mt-4 flex flex-1 flex-wrap content-start gap-2">
-                  {modulePreview.map((module) => (
-                    <span key={module.resource} className="max-w-full truncate rounded-lg border border-slate-100 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm">
-                      {module.label} <span className="ml-1 text-slate-400">{module.count}</span>
-                    </span>
-                  ))}
-                  {department.modules.length > modulePreview.length && (
-                    <span className="rounded-lg bg-slate-950 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm">
-                      +{department.modules.length - modulePreview.length} more
-                    </span>
-                  )}
-                </div>
-
-                <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-sm">
-                  <span className="font-semibold text-teal-700">Open department</span>
-                  <span className="text-slate-400 transition group-hover:translate-x-1 group-hover:text-teal-700">-&gt;</span>
+                  <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-sm">
+                    <span className={`font-semibold ${style.text}`}>Open department</span>
+                    <span className="text-slate-400 transition group-hover:translate-x-1 group-hover:text-slate-800">-&gt;</span>
+                  </div>
                 </div>
               </Link>
             );
@@ -321,18 +302,14 @@ export default function HomePage() {
         </section>
 
         {!dashboard && (
-          <section className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <section className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {Array.from({ length: 6 }).map((_, index) => (
-              <div key={index} className="h-64 animate-pulse rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <div key={index} className="h-72 animate-pulse rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="h-12 w-12 rounded-lg bg-slate-100" />
                 <div className="mt-4 h-4 w-2/3 rounded bg-slate-100" />
                 <div className="mt-3 h-3 w-full rounded bg-slate-100" />
                 <div className="mt-2 h-3 w-5/6 rounded bg-slate-100" />
-                <div className="mt-6 grid grid-cols-3 gap-2">
-                  <div className="h-16 rounded-lg bg-slate-100" />
-                  <div className="h-16 rounded-lg bg-slate-100" />
-                  <div className="h-16 rounded-lg bg-slate-100" />
-                </div>
+                <div className="mt-6 h-16 rounded-lg bg-slate-100" />
               </div>
             ))}
           </section>
