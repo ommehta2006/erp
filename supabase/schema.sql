@@ -48,10 +48,13 @@ create table if not exists public.erp_modules (
 create table if not exists public.app_users (
   id uuid primary key default gen_random_uuid(),
   email text not null unique,
+  password_hash text,
   full_name text,
   role text not null default 'FACTORY_USER',
   department_id text references public.erp_departments(id),
   status text not null default 'Active',
+  failed_login_count integer not null default 0,
+  locked_until bigint,
   last_login_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -90,6 +93,7 @@ create table if not exists public.integration_events (
 );
 create index if not exists idx_erp_modules_department on public.erp_modules(department_id, sort_order);
 create index if not exists idx_app_users_department on public.app_users(department_id);
+create index if not exists idx_app_users_email_status on public.app_users(email, status);
 create index if not exists idx_audit_events_resource on public.audit_events(resource, created_at desc);
 create index if not exists idx_uploaded_files_record on public.uploaded_files(resource, record_id);
 create index if not exists idx_integration_events_status on public.integration_events(status, created_at desc);

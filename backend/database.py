@@ -2,6 +2,7 @@ import os
 import sqlite3
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from dotenv import load_dotenv
@@ -94,6 +95,67 @@ class Storage:
         con = sqlite3.connect(self.db_path)
         con.execute("create table if not exists records (id text primary key, resource text not null, data text not null, status text not null, created_at integer not null, updated_at integer not null)")
         con.execute("create index if not exists idx_records_resource on records(resource, updated_at desc)")
+        con.execute("""
+            create table if not exists app_users (
+                id text primary key,
+                email text not null unique,
+                password_hash text,
+                full_name text,
+                role text not null default 'FACTORY_USER',
+                department_id text,
+                status text not null default 'Active',
+                failed_login_count integer not null default 0,
+                locked_until integer,
+                last_login_at integer,
+                created_at integer not null,
+                updated_at integer not null
+            )
+        """)
+        con.commit()
+        con.close()
+
+    def get_user_by_email(self, email: str):
+        email = email.strip().lower()
+        if self.mode == "supabase":
+            response = self.client.table("app_users").select("*").eq("email", email).limit(1).execute()
+            return response.data[0] if response.data else None
+        con = sqlite3.connect(self.db_path)
+        con.row_factory = sqlite3.Row
+        row = con.execute("select * from app_users where email = ? limit 1", (email,)).fetchone()
+        con.close()
+        return dict(row) if row else None
+
+    def record_login_success(self, email: str):
+        email = email.strip().lower()
+        now = int(time.time())
+        if self.mode == "supabase":
+            self.client.table("app_users").update({
+                "failed_login_count": 0,
+                "locked_until": None,
+                "last_login_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("email", email).execute()
+            return
+        con = sqlite3.connect(self.db_path)
+        con.execute("update app_users set failed_login_count = 0, locked_until = null, last_login_at = ?, updated_at = ? where email = ?", (now, now, email))
+        con.commit()
+        con.close()
+
+    def record_login_failure(self, email: str, max_attempts: int = 5, lock_seconds: int = 900):
+        email = email.strip().lower()
+        now = int(time.time())
+        user = self.get_user_by_email(email)
+        if not user:
+            return
+        failed = int(user.get("failed_login_count") or 0) + 1
+        locked_until = now + lock_seconds if failed >= max_attempts else user.get("locked_until")
+        if self.mode == "supabase":
+            self.client.table("app_users").update({
+                "failed_login_count": failed,
+                "locked_until": locked_until,
+            }).eq("email", email).execute()
+            return
+        con = sqlite3.connect(self.db_path)
+        con.execute("update app_users set failed_login_count = ?, locked_until = ?, updated_at = ? where email = ?", (failed, locked_until, now, email))
         con.commit()
         con.close()
 

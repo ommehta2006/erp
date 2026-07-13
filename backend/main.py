@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import hmac
 import os
 import time
@@ -20,7 +22,9 @@ app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True
 ADMIN_EMAIL = os.getenv("BOOTSTRAP_ADMIN_EMAIL", "admin@factorypulse.local")
 ADMIN_PASSWORD = os.getenv("BOOTSTRAP_ADMIN_PASSWORD", "")
 APP_SECRET_KEY = os.getenv("APP_SECRET_KEY", "")
-AUTH_CONFIGURED = bool(ADMIN_PASSWORD and APP_SECRET_KEY)
+AUTH_CONFIGURED = bool(APP_SECRET_KEY)
+MAX_LOGIN_ATTEMPTS = int(os.getenv("MAX_LOGIN_ATTEMPTS", "5"))
+LOGIN_LOCK_SECONDS = int(os.getenv("LOGIN_LOCK_SECONDS", "900"))
 
 class LoginRequest(BaseModel):
     email: str
@@ -35,6 +39,47 @@ def _sign(email: str) -> str:
     payload = f"{email}:{int(time.time()) + 28800}"
     sig = hmac.new(APP_SECRET_KEY.encode(), payload.encode(), "sha256").hexdigest()
     return f"{payload}:{sig}"
+
+def _verify_password(password: str, password_hash: str | None) -> bool:
+    if not password_hash:
+        return False
+    try:
+        algorithm, iterations, salt, expected = password_hash.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        digest = hashlib.pbkdf2_hmac("sha256", password.encode(), base64.b64decode(salt), int(iterations))
+        actual = base64.b64encode(digest).decode()
+        return hmac.compare_digest(actual, expected)
+    except Exception:
+        return False
+
+def _locked_until_epoch(value: Any) -> int:
+    if not value:
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+def _login_user(email: str, password: str):
+    email = email.strip().lower()
+    user = storage.get_user_by_email(email)
+    if user and user.get("status", "Active") != "Active":
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    if user and _locked_until_epoch(user.get("locked_until")) > int(time.time()):
+        raise HTTPException(status_code=429, detail="Too many failed login attempts. Try again later.")
+    if user and _verify_password(password, user.get("password_hash")):
+        storage.record_login_success(email)
+        return {
+            "email": email,
+            "name": user.get("full_name") or "FactoryPulse Admin",
+            "role": user.get("role") or "FACTORY_ADMIN",
+        }
+    if user:
+        storage.record_login_failure(email, MAX_LOGIN_ATTEMPTS, LOGIN_LOCK_SECONDS)
+    if ADMIN_PASSWORD and email == ADMIN_EMAIL.strip().lower() and hmac.compare_digest(password, ADMIN_PASSWORD):
+        return {"email": email, "name": "FactoryPulse Admin", "role": "FACTORY_ADMIN"}
+    raise HTTPException(status_code=401, detail="Invalid email or password")
 
 def _verify(authorization: str | None = Header(default=None)) -> str:
     if not AUTH_CONFIGURED:
@@ -64,9 +109,8 @@ def health():
 def login(payload: LoginRequest):
     if not AUTH_CONFIGURED:
         raise HTTPException(status_code=503, detail="Authentication is not configured")
-    if payload.email != ADMIN_EMAIL or not hmac.compare_digest(payload.password, ADMIN_PASSWORD):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-    return {"token": _sign(payload.email), "user": {"email": payload.email, "name": "FactoryPulse Admin", "role": "FACTORY_ADMIN"}}
+    user = _login_user(payload.email, payload.password)
+    return {"token": _sign(user["email"]), "user": user}
 
 @app.get("/api/catalog")
 def catalog(_: str = Depends(_verify)):
