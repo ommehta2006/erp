@@ -15,6 +15,7 @@ type HrOverview = {
 };
 
 const CORE_ACTIONS = [
+  { title: "Onboard Employee", body: "Create employee master, private details, salary, location, device, biometric metadata, and lifecycle records.", href: "/hr/employees" },
   { title: "Create Work Location", body: "Factory, warehouse, site, office, remote, and temporary approved locations.", href: "/departments/hr?module=work_locations" },
   { title: "Configure Geofence", body: "Circular or polygon boundaries with GPS accuracy, approval status, and versions.", href: "/departments/hr?module=geofences" },
   { title: "Assign Employee Location", body: "Primary, temporary, shift-specific, or date-specific work-location assignment.", href: "/departments/hr?module=employee_location_assignments" },
@@ -79,6 +80,7 @@ export default function HrPage() {
             <p className="text-sm text-slate-500">Employee lifecycle, geofenced attendance, biometric evidence, leave, salary, and audit operations.</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Link href="/hr/employees" className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-700 hover:border-teal-600">Employee Master</Link>
             <Link href="/departments/hr" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:border-teal-600">Full HR Modules</Link>
             <Link href="/finance" className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-700 hover:border-sky-600">Finance Payroll</Link>
             <Link href="/departments/finance?module=payroll_adjustments" className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">Payroll Adjustments</Link>

@@ -100,6 +100,52 @@ class PayrollGenerateRequest(BaseModel):
     department: str | None = None
     dry_run: bool = False
 
+class HrEmployeeOnboardingRequest(BaseModel):
+    employee_code: str
+    full_name: str
+    department: str
+    role: str
+    phone: str | None = None
+    email: str
+    shift: str = "General"
+    status: str = "Active"
+    date_of_birth: str | None = None
+    gender: str | None = None
+    nationality: str | None = None
+    tax_identifier_ref: str | None = None
+    bank_name: str | None = None
+    account_last4: str | None = None
+    ifsc_or_routing: str | None = None
+    document_type: str | None = None
+    document_no_masked: str | None = None
+    document_expiry_date: str | None = None
+    emergency_contact_name: str | None = None
+    emergency_relationship: str | None = None
+    emergency_phone: str | None = None
+    emergency_address: str | None = None
+    location_id: str | None = None
+    location_assignment_type: str = "Primary"
+    effective_start_date: str | None = None
+    effective_end_date: str | None = None
+    salary_structure_id: str | None = None
+    gross_salary: str | None = None
+    ctc: str | None = None
+    trusted_device_id: str | None = None
+    device_platform: str | None = None
+    device_name: str | None = None
+    app_version: str | None = None
+    lifecycle_reason: str = "Employee onboarded from HR command center"
+
+class HrLifecycleEventRequest(BaseModel):
+    employee_code: str
+    event_type: str
+    effective_date: str
+    previous_value: str | None = None
+    new_value: str
+    reason: str
+    approved_by: str | None = None
+    status: str = "Approved"
+
 def _sign(email: str) -> str:
     if not AUTH_CONFIGURED:
         raise HTTPException(status_code=503, detail="Authentication is not configured")
@@ -432,6 +478,219 @@ def _hr_overview():
             for item in [*out_of_fence, *pending_approvals][:12]
         ],
     }
+
+def _clean_text(value: Any) -> str:
+    return str(value or "").strip()
+
+def _employee_bundle(employee_code: str):
+    employee = _active_record(_records_for_employee("employees", employee_code, 100)) or _active_record(_records_by_field("employees", "email", employee_code, 100))
+    private_details = _records_for_employee("employee_private_details", employee_code, 20)
+    bank_details = _records_for_employee("employee_bank_details", employee_code, 20)
+    documents = _records_for_employee("employee_documents", employee_code, 50)
+    emergency_contacts = _records_for_employee("employee_emergency_contacts", employee_code, 20)
+    lifecycle = _records_for_employee("employee_lifecycle_events", employee_code, 100)
+    salary_assignments = _records_for_employee("employee_salary_assignments", employee_code, 50)
+    salary_revisions = _records_for_employee("salary_revision_history", employee_code, 50)
+    location_assignments = _records_for_employee("employee_location_assignments", employee_code, 50)
+    shift_assignments = _records_for_employee("employee_shift_assignments", employee_code, 50)
+    device_registrations = _records_for_employee("device_registrations", employee_code, 50)
+    biometric_enrollments = _records_for_employee("employee_biometric_enrollments", employee_code, 50)
+    salary_slips = _records_for_employee("salary_slips", employee_code, 50)
+    attendance = _records_for_employee("attendance_records", employee_code, 100)
+    missing = []
+    if not private_details:
+        missing.append("private_details")
+    if not bank_details:
+        missing.append("bank_details")
+    if not documents:
+        missing.append("documents")
+    if not emergency_contacts:
+        missing.append("emergency_contacts")
+    if not salary_assignments:
+        missing.append("salary_assignment")
+    if not location_assignments:
+        missing.append("work_location")
+    if not biometric_enrollments:
+        missing.append("biometric_enrollment")
+    return {
+        "employee_code": employee_code,
+        "employee": employee.get("data", {}) if employee else None,
+        "private_details": [item.get("data", {}) for item in private_details],
+        "bank_details": [item.get("data", {}) for item in bank_details],
+        "documents": [item.get("data", {}) for item in documents],
+        "emergency_contacts": [item.get("data", {}) for item in emergency_contacts],
+        "lifecycle": [item.get("data", {}) for item in lifecycle],
+        "salary_assignments": [item.get("data", {}) for item in salary_assignments],
+        "salary_revisions": [item.get("data", {}) for item in salary_revisions],
+        "location_assignments": [item.get("data", {}) for item in location_assignments],
+        "shift_assignments": [item.get("data", {}) for item in shift_assignments],
+        "device_registrations": [item.get("data", {}) for item in device_registrations],
+        "biometric_enrollments": [item.get("data", {}) for item in biometric_enrollments],
+        "salary_slips": [item.get("data", {}) for item in salary_slips],
+        "attendance_records": [item.get("data", {}) for item in attendance],
+        "profile_completeness": max(0, round(((7 - len(missing)) / 7) * 100)),
+        "missing_sections": missing,
+    }
+
+def _trusted_biometric_enrollment(employee_code: str, method: str, trusted_device_id: str):
+    for item in _records_for_employee("employee_biometric_enrollments", employee_code, 100):
+        data = item.get("data", {})
+        if (
+            data.get("trusted_device_id", "").strip().lower() == trusted_device_id.strip().lower()
+            and data.get("verification_method", "").strip().lower() == method.strip().lower()
+            and item.get("status") in {"Active", "Approved"}
+        ):
+            return item
+    return None
+
+def _create_lifecycle_event(payload: HrLifecycleEventRequest, actor: str):
+    employee_code = payload.employee_code.strip()
+    if not employee_code or not payload.event_type.strip() or not payload.effective_date.strip():
+        raise HTTPException(status_code=422, detail="employee_code, event_type, and effective_date are required.")
+    item = storage.create_record("employee_lifecycle_events", {
+        "event_no": _new_ref("LIFE"),
+        "employee_code": employee_code,
+        "event_type": payload.event_type.strip(),
+        "effective_date": payload.effective_date.strip(),
+        "previous_value": _clean_text(payload.previous_value),
+        "new_value": payload.new_value.strip(),
+        "reason": payload.reason.strip(),
+        "approved_by": _clean_text(payload.approved_by) or actor,
+        "status": payload.status.strip() or "Approved",
+    })
+    _write_audit(actor, "create_lifecycle_event", "employee_lifecycle_events", item.get("id", ""), item.get("data", {}), payload.reason)
+    return item
+
+def _onboard_employee(payload: HrEmployeeOnboardingRequest, actor: str):
+    employee_code = payload.employee_code.strip()
+    email = payload.email.strip().lower()
+    if not employee_code or not payload.full_name.strip() or not email:
+        raise HTTPException(status_code=422, detail="employee_code, full_name, and email are required.")
+    if _records_for_employee("employees", employee_code, 10):
+        raise HTTPException(status_code=409, detail="Employee code already exists.")
+    if _records_by_field("employees", "email", email, 10):
+        raise HTTPException(status_code=409, detail="Employee email already exists.")
+
+    created: dict[str, Any] = {}
+    employee = storage.create_record("employees", {
+        "employee_code": employee_code,
+        "full_name": payload.full_name.strip(),
+        "department": payload.department.strip(),
+        "role": payload.role.strip(),
+        "phone": _clean_text(payload.phone),
+        "email": email,
+        "shift": payload.shift.strip() or "General",
+        "status": payload.status.strip() or "Active",
+    })
+    created["employee"] = employee
+
+    if payload.date_of_birth:
+        created["private_details"] = storage.create_record("employee_private_details", {
+            "employee_code": employee_code,
+            "date_of_birth": payload.date_of_birth.strip(),
+            "gender": _clean_text(payload.gender),
+            "nationality": _clean_text(payload.nationality),
+            "tax_identifier_ref": _clean_text(payload.tax_identifier_ref),
+            "status": "Active",
+        })
+    if payload.bank_name:
+        created["bank_details"] = storage.create_record("employee_bank_details", {
+            "employee_code": employee_code,
+            "bank_name": payload.bank_name.strip(),
+            "account_last4": _clean_text(payload.account_last4)[-4:],
+            "ifsc_or_routing": _clean_text(payload.ifsc_or_routing),
+            "verification_status": "Pending",
+            "status": "Pending",
+        })
+    if payload.document_type:
+        created["document"] = storage.create_record("employee_documents", {
+            "employee_code": employee_code,
+            "document_type": payload.document_type.strip(),
+            "document_no_masked": _clean_text(payload.document_no_masked),
+            "expiry_date": _clean_text(payload.document_expiry_date),
+            "verification_status": "Pending",
+            "status": "Pending",
+        })
+    if payload.emergency_contact_name:
+        created["emergency_contact"] = storage.create_record("employee_emergency_contacts", {
+            "employee_code": employee_code,
+            "contact_name": payload.emergency_contact_name.strip(),
+            "relationship": _clean_text(payload.emergency_relationship),
+            "phone": _clean_text(payload.emergency_phone),
+            "address": _clean_text(payload.emergency_address),
+            "status": "Active",
+        })
+    if payload.location_id:
+        created["location_assignment"] = storage.create_record("employee_location_assignments", {
+            "assignment_id": _new_ref("LOC-ASG"),
+            "employee_code": employee_code,
+            "location_id": payload.location_id.strip(),
+            "shift": payload.shift.strip() or "General",
+            "effective_start_date": _clean_text(payload.effective_start_date) or _today(),
+            "effective_end_date": _clean_text(payload.effective_end_date),
+            "assignment_type": payload.location_assignment_type.strip() or "Primary",
+            "approval_status": "Approved",
+            "status": "Active",
+        })
+    if payload.shift:
+        created["shift_assignment"] = storage.create_record("employee_shift_assignments", {
+            "assignment_id": _new_ref("SHIFT-ASG"),
+            "employee_code": employee_code,
+            "shift": payload.shift.strip(),
+            "effective_start_date": _clean_text(payload.effective_start_date) or _today(),
+            "effective_end_date": _clean_text(payload.effective_end_date),
+            "approval_status": "Approved",
+            "status": "Active",
+        })
+    if payload.gross_salary or payload.ctc:
+        created["salary_assignment"] = storage.create_record("employee_salary_assignments", {
+            "assignment_id": _new_ref("SAL-ASG"),
+            "employee_code": employee_code,
+            "structure_id": _clean_text(payload.salary_structure_id) or "DEFAULT",
+            "effective_date": _clean_text(payload.effective_start_date) or _today(),
+            "gross_salary": _clean_text(payload.gross_salary),
+            "ctc": _clean_text(payload.ctc) or _clean_text(payload.gross_salary),
+            "approval_status": "Approved",
+            "status": "Active",
+        })
+    if payload.trusted_device_id:
+        device_id = payload.trusted_device_id.strip()
+        created["device_registration"] = storage.create_record("device_registrations", {
+            "device_id": device_id,
+            "employee_code": employee_code,
+            "platform": _clean_text(payload.device_platform) or "mobile",
+            "device_name": _clean_text(payload.device_name),
+            "app_version": _clean_text(payload.app_version),
+            "restricted_device": "Yes",
+            "registered_at": _now_iso(),
+            "approval_status": "Approved",
+            "status": "Active",
+        })
+        created["biometric_enrollment"] = storage.create_record("employee_biometric_enrollments", {
+            "enrollment_id": _new_ref("BIO-ENR"),
+            "employee_code": employee_code,
+            "verification_method": "fingerprint",
+            "trusted_device_id": device_id,
+            "assertion_reference": _new_ref("ASSERT"),
+            "enrolled_at": _now_iso(),
+            "privacy_notice": "Raw fingerprints and biometric templates are never stored. Only OS biometric enrollment metadata and assertion references are retained.",
+            "approval_status": "Approved",
+            "status": "Active",
+        })
+
+    lifecycle = _create_lifecycle_event(HrLifecycleEventRequest(
+        employee_code=employee_code,
+        event_type="Employee Joined",
+        effective_date=_clean_text(payload.effective_start_date) or _today(),
+        previous_value="",
+        new_value=payload.department.strip(),
+        reason=payload.lifecycle_reason,
+        approved_by=actor,
+        status="Approved",
+    ), actor)
+    created["lifecycle_event"] = lifecycle
+    _write_audit(actor, "onboard_employee", "employees", employee_code, {key: value.get("data", {}) for key, value in created.items() if isinstance(value, dict)}, payload.lifecycle_reason)
+    return {"created": created, "profile": _employee_bundle(employee_code)}
 
 def _parse_iso_date(value: str, field: str) -> date:
     try:
@@ -980,6 +1239,12 @@ def v1_employee_biometric(payload: BiometricVerificationRequest, email: str = De
     result = payload.verification_result.strip().lower()
     if result not in {"success", "failed", "cancelled", "locked", "unavailable"}:
         raise HTTPException(status_code=422, detail="Invalid biometric verification result.")
+    if result == "success":
+        trusted_device_id = payload.trusted_device_id.strip() if payload.trusted_device_id else ""
+        if not trusted_device_id:
+            raise HTTPException(status_code=422, detail="trusted_device_id is required for successful biometric verification.")
+        if not _trusted_biometric_enrollment(employee_code, method, trusted_device_id):
+            raise HTTPException(status_code=403, detail="This employee/device biometric enrollment is not approved. HR must enroll the trusted device first.")
     event_id = _new_ref("BIO")
     item = storage.create_record("attendance_biometric_events", {
         "event_id": event_id,
@@ -1001,6 +1266,43 @@ def v1_employee_biometric(payload: BiometricVerificationRequest, email: str = De
 @app.get("/api/v1/hr/overview")
 def v1_hr_overview(_: str = Depends(_verify)):
     return _hr_overview()
+
+@app.get("/api/v1/hr/employees-dashboard")
+def v1_hr_employees_dashboard(_: str = Depends(_verify)):
+    employees = _items("employees", 500)
+    bundles = [_employee_bundle(row.get("data", {}).get("employee_code") or row.get("data", {}).get("email", "")) for row in employees]
+    complete = [item for item in bundles if item["profile_completeness"] == 100]
+    incomplete = [item for item in bundles if item["profile_completeness"] < 100]
+    biometric_ready = [item for item in bundles if item["biometric_enrollments"]]
+    return {
+        "stats": {
+            "employees": len(employees),
+            "active": len([row for row in employees if row.get("status") == "Active"]),
+            "complete_profiles": len(complete),
+            "incomplete_profiles": len(incomplete),
+            "biometric_ready": len(biometric_ready),
+            "salary_assigned": len([item for item in bundles if item["salary_assignments"]]),
+            "location_assigned": len([item for item in bundles if item["location_assignments"]]),
+        },
+        "employees": bundles,
+        "missing_private_or_sensitive_notice": "Sensitive HR details are returned only to authenticated HR/admin users and biometric records never contain raw fingerprints or templates.",
+    }
+
+@app.get("/api/v1/hr/employees/{employee_code}")
+def v1_hr_employee_detail(employee_code: str, _: str = Depends(_verify)):
+    bundle = _employee_bundle(employee_code)
+    if not bundle["employee"]:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    return bundle
+
+@app.post("/api/v1/hr/employees/onboard")
+def v1_hr_employee_onboard(payload: HrEmployeeOnboardingRequest, email: str = Depends(_verify)):
+    return _onboard_employee(payload, email)
+
+@app.post("/api/v1/hr/employees/lifecycle")
+def v1_hr_employee_lifecycle(payload: HrLifecycleEventRequest, email: str = Depends(_verify)):
+    item = _create_lifecycle_event(payload, email)
+    return {"item": item, "profile": _employee_bundle(payload.employee_code)}
 
 @app.get("/api/v1/hr/geofence-dashboard")
 def v1_hr_geofence_dashboard(_: str = Depends(_verify)):
