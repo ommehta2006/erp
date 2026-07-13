@@ -196,6 +196,22 @@ class HrLocationAssignmentRequest(BaseModel):
     approval_status: str = "Approved"
     status: str = "Active"
 
+class HrAttendancePolicyRequest(BaseModel):
+    policy_name: str = "Default Attendance Policy"
+    late_after_time: str = "09:15"
+    grace_minutes: int = 0
+    tracking_interval_minutes: int = 5
+    background_location_required: bool = True
+    status: str = "Active"
+
+class HrShiftRequest(BaseModel):
+    name: str
+    start_time: str
+    end_time: str
+    department: str = "All"
+    supervisor: str | None = None
+    status: str = "Active"
+
 class BiometricVerificationRequest(BaseModel):
     event_type: str = "day_in"
     attendance_record_id: str | None = None
@@ -1823,6 +1839,42 @@ def _late_after_time(policy: dict[str, str]) -> str:
     except ValueError:
         return "09:15"
 
+def _validate_hhmm(value: str, field: str) -> str:
+    clean = value.strip()
+    try:
+        datetime.strptime(clean, "%H:%M")
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"{field} must use HH:MM 24-hour format.")
+    return clean
+
+def _hr_settings_dashboard():
+    policies = _items("attendance_policies", 100)
+    shifts = _items("shifts", 200)
+    shift_assignments = _items("employee_shift_assignments", 500)
+    active_policy = _attendance_policy()
+    active_shifts = [item for item in shifts if item.get("status") == "Active"]
+    return {
+        "active_policy": active_policy,
+        "policies": policies,
+        "shifts": shifts,
+        "shift_assignments": shift_assignments,
+        "stats": {
+            "policies": len(policies),
+            "active_policies": len([item for item in policies if item.get("status") == "Active"]),
+            "shifts": len(shifts),
+            "active_shifts": len(active_shifts),
+            "assignments": len(shift_assignments),
+            "late_after_time": active_policy.get("late_after_time", "09:15"),
+            "tracking_interval_minutes": active_policy.get("tracking_interval_minutes", "5"),
+        },
+        "rules": {
+            "late_mark_source": "HR attendance policy",
+            "active_late_after_time": _late_after_time(active_policy),
+            "background_location_required": active_policy.get("background_location_required", "Yes"),
+            "employee_app_effect": "Employee Day In after late_after_time is marked late by backend attendance snapshot.",
+        },
+    }
+
 def _attendance_snapshot(employee_code: str, policy: dict[str, str] | None = None):
     policy = policy or _attendance_policy()
     late_after = _late_after_time(policy)
@@ -2207,6 +2259,54 @@ def v1_hr_holiday(payload: HolidayRequest, email: str = Depends(_verify)):
     })
     _write_audit(email, "create_holiday", "holidays", item.get("id", ""), item.get("data", {}), "HR holiday creation")
     return {"item": item, "dashboard": _leave_dashboard()}
+
+@app.get("/api/v1/hr/settings-dashboard")
+def v1_hr_settings_dashboard(email: str = Depends(_verify)):
+    _require_permission(email, "hr:read")
+    return _hr_settings_dashboard()
+
+@app.post("/api/v1/hr/attendance-policy")
+def v1_hr_attendance_policy(payload: HrAttendancePolicyRequest, email: str = Depends(_verify)):
+    _require_permission(email, "hr:write")
+    late_after = _validate_hhmm(payload.late_after_time, "late_after_time")
+    if payload.grace_minutes < 0 or payload.grace_minutes > 120:
+        raise HTTPException(status_code=422, detail="grace_minutes must be between 0 and 120.")
+    if payload.tracking_interval_minutes < 1 or payload.tracking_interval_minutes > 120:
+        raise HTTPException(status_code=422, detail="tracking_interval_minutes must be between 1 and 120.")
+    for item in _items("attendance_policies", 100):
+        if item.get("status") == "Active":
+            try:
+                storage.update_record("attendance_policies", item.get("id", ""), {"status": "Inactive"})
+            except Exception:
+                pass
+    item = storage.create_record("attendance_policies", {
+        "policy_name": payload.policy_name.strip() or "Default Attendance Policy",
+        "late_after_time": late_after,
+        "grace_minutes": str(payload.grace_minutes),
+        "tracking_interval_minutes": str(payload.tracking_interval_minutes),
+        "background_location_required": "Yes" if payload.background_location_required else "No",
+        "status": payload.status.strip() or "Active",
+    })
+    _write_audit(email, "set_attendance_policy", "attendance_policies", item.get("id", ""), item.get("data", {}), "HR updated attendance policy used by employee Day In.")
+    return {"item": item, "dashboard": _hr_settings_dashboard()}
+
+@app.post("/api/v1/hr/shifts")
+def v1_hr_shift(payload: HrShiftRequest, email: str = Depends(_verify)):
+    _require_permission(email, "hr:write")
+    start_time = _validate_hhmm(payload.start_time, "start_time")
+    end_time = _validate_hhmm(payload.end_time, "end_time")
+    if not payload.name.strip():
+        raise HTTPException(status_code=422, detail="name is required.")
+    item = storage.create_record("shifts", {
+        "name": payload.name.strip(),
+        "start_time": start_time,
+        "end_time": end_time,
+        "department": payload.department.strip() or "All",
+        "supervisor": _clean_text(payload.supervisor),
+        "status": payload.status.strip() or "Active",
+    })
+    _write_audit(email, "create_shift", "shifts", item.get("id", ""), item.get("data", {}), "HR shift created.")
+    return {"item": item, "dashboard": _hr_settings_dashboard()}
 
 @app.get("/api/v1/hr/attendance-dashboard")
 def v1_hr_attendance_dashboard(email: str = Depends(_verify)):

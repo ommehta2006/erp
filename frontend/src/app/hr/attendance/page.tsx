@@ -171,6 +171,7 @@ export default function HrAttendancePage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <button onClick={exportCsv} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:border-teal-600">Export CSV</button>
+            <Link href="/hr/settings" className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-medium text-cyan-700 hover:border-cyan-600">Policy & Shifts</Link>
             <Link href="/departments/hr?module=attendance_records" className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">Generic Attendance Table</Link>
           </div>
         </div>

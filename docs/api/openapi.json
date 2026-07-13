@@ -425,6 +425,42 @@
         "title": "HolidayRequest",
         "type": "object"
       },
+      "HrAttendancePolicyRequest": {
+        "properties": {
+          "background_location_required": {
+            "default": true,
+            "title": "Background Location Required",
+            "type": "boolean"
+          },
+          "grace_minutes": {
+            "default": 0,
+            "title": "Grace Minutes",
+            "type": "integer"
+          },
+          "late_after_time": {
+            "default": "09:15",
+            "title": "Late After Time",
+            "type": "string"
+          },
+          "policy_name": {
+            "default": "Default Attendance Policy",
+            "title": "Policy Name",
+            "type": "string"
+          },
+          "status": {
+            "default": "Active",
+            "title": "Status",
+            "type": "string"
+          },
+          "tracking_interval_minutes": {
+            "default": 5,
+            "title": "Tracking Interval Minutes",
+            "type": "integer"
+          }
+        },
+        "title": "HrAttendancePolicyRequest",
+        "type": "object"
+      },
       "HrEmployeeOnboardingRequest": {
         "properties": {
           "account_last4": {
@@ -996,6 +1032,50 @@
           "location_id"
         ],
         "title": "HrLocationAssignmentRequest",
+        "type": "object"
+      },
+      "HrShiftRequest": {
+        "properties": {
+          "department": {
+            "default": "All",
+            "title": "Department",
+            "type": "string"
+          },
+          "end_time": {
+            "title": "End Time",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "start_time": {
+            "title": "Start Time",
+            "type": "string"
+          },
+          "status": {
+            "default": "Active",
+            "title": "Status",
+            "type": "string"
+          },
+          "supervisor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supervisor"
+          }
+        },
+        "required": [
+          "name",
+          "start_time",
+          "end_time"
+        ],
+        "title": "HrShiftRequest",
         "type": "object"
       },
       "HrWorkLocationRequest": {
@@ -3103,6 +3183,60 @@
         "summary": "V1 Hr Attendance Dashboard"
       }
     },
+    "/api/v1/hr/attendance-policy": {
+      "post": {
+        "operationId": "v1_hr_attendance_policy_api_v1_hr_attendance_policy_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HrAttendancePolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Hr Attendance Policy"
+      }
+    },
     "/api/v1/hr/attendance/correction-decision": {
       "post": {
         "operationId": "v1_hr_attendance_correction_decision_api_v1_hr_attendance_correction_decision_post",
@@ -3968,6 +4102,104 @@
           }
         },
         "summary": "V1 Hr Overview"
+      }
+    },
+    "/api/v1/hr/settings-dashboard": {
+      "get": {
+        "operationId": "v1_hr_settings_dashboard_api_v1_hr_settings_dashboard_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Hr Settings Dashboard"
+      }
+    },
+    "/api/v1/hr/shifts": {
+      "post": {
+        "operationId": "v1_hr_shift_api_v1_hr_shifts_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HrShiftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "V1 Hr Shift"
       }
     },
     "/api/v1/hr/work-locations": {
