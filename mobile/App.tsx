@@ -89,6 +89,30 @@ type SalarySlip = {
 type SalaryDashboard = { items: SalarySlip[]; latest: SalarySlip | null; totals: { gross_pay: number; deductions: number; net_pay: number } };
 type NotificationDashboard = { items: RecordItem[]; unread: number };
 type AnnouncementDashboard = { items: RecordItem[]; count: number };
+type EmployeeProfile = {
+  employee_code: string;
+  employee: Record<string, string>;
+  private_details: Record<string, string>[];
+  documents: Record<string, string>[];
+  emergency_contacts: Record<string, string>[];
+  lifecycle: Record<string, string>[];
+};
+type EmployeeAnalytics = {
+  summary: Record<string, string | number>;
+  percentages: Record<string, number>;
+  salary_history: Record<string, string>[];
+  salary_slips: Record<string, string>[];
+  lifecycle_timeline: Record<string, string>[];
+  profile: {
+    profile_completeness: number;
+    missing_sections: string[];
+    salary_assignments: Record<string, string>[];
+    location_assignments: Record<string, string>[];
+    shift_assignments: Record<string, string>[];
+    device_registrations: Record<string, string>[];
+    biometric_enrollments: Record<string, string>[];
+  };
+};
 type Screen =
   | { name: "home" }
   | { name: "work" }
@@ -186,7 +210,7 @@ export default function App() {
       {screen.name === "departments" && <DepartmentListScreen token={token} navigate={setScreen} />}
       {screen.name === "department" && <DepartmentScreen token={token} departmentId={screen.id} navigate={setScreen} />}
       {screen.name === "create" && <CreateRecordScreen token={token} departmentId={screen.departmentId} module={screen.module} navigate={setScreen} />}
-      {screen.name === "profile" && <ProfileScreen user={user} onSignOut={signOut} navigate={setScreen} />}
+      {screen.name === "profile" && <ProfileScreen token={token} user={user} onSignOut={signOut} navigate={setScreen} />}
       <BottomNav current={screen.name} navigate={setScreen} />
     </SafeAreaView>
   );
@@ -877,25 +901,89 @@ function CreateRecordScreen({ token, departmentId, module, navigate }: { token: 
   );
 }
 
-function ProfileScreen({ user, onSignOut, navigate }: { user: User; onSignOut: () => Promise<void>; navigate: (screen: Screen) => void }) {
+function ProfileScreen({ token, user, onSignOut, navigate }: { token: string; user: User; onSignOut: () => Promise<void>; navigate: (screen: Screen) => void }) {
+  const { data: profile, loading: profileLoading, error: profileError, refresh: refreshProfile } = useApi<EmployeeProfile>(token, "/api/v1/employee/profile");
+  const { data: analytics, loading: analyticsLoading, error: analyticsError, refresh: refreshAnalytics } = useApi<EmployeeAnalytics>(token, "/api/v1/employee/analytics");
+  const employee = profile?.employee || {};
+  const summary = analytics?.summary || {};
+  const profileBundle = analytics?.profile;
+  const completeness = Number(summary.profile_completeness || profileBundle?.profile_completeness || 0);
+  const salary = profileBundle?.salary_assignments?.[0] || {};
+  const location = profileBundle?.location_assignments?.[0] || {};
+  const shift = profileBundle?.shift_assignments?.[0] || {};
+  const device = profileBundle?.device_registrations?.[0] || {};
+  const biometric = profileBundle?.biometric_enrollments?.[0] || {};
+  const lifecycleRows = analytics?.lifecycle_timeline?.length ? analytics.lifecycle_timeline : profile?.lifecycle || [];
+
   return (
-    <ScreenScroll>
-      <TopBar title="Employee Control" subtitle="Account, access, and live ERP connection" />
+    <ScreenScroll refresh={() => { refreshProfile(); refreshAnalytics(); }} loading={profileLoading || analyticsLoading}>
+      <TopBar title="Employee Control" subtitle="Profile, employment, access, salary, and lifecycle records" />
+      {profileError ? <ErrorBanner message={profileError} /> : null}
+      {analyticsError ? <ErrorBanner message={analyticsError} /> : null}
       <View style={styles.profileCard}>
         <View style={styles.avatar}><Text style={styles.avatarText}>{user.email.slice(0, 1).toUpperCase()}</Text></View>
-        <Text style={styles.profileName}>{user.name || "FactoryPulse Employee"}</Text>
-        <Text style={styles.profileMeta}>{user.email}</Text>
-        <Text style={styles.roleBadge}>{user.role}</Text>
+        <Text style={styles.profileName}>{employee.full_name || summary.employee_name || user.name || "FactoryPulse Employee"}</Text>
+        <Text style={styles.profileMeta}>{profile?.employee_code || employee.employee_code || user.email}</Text>
+        <Text style={styles.profileMeta}>{employee.email || user.email}</Text>
+        <Text style={styles.roleBadge}>{employee.status || user.role}</Text>
       </View>
+
       <View style={styles.largeCard}>
-        <Text style={styles.cardTitle}>Employee capabilities</Text>
-        {["Attendance and shift records", "Leave, expenses, and approvals", "Safety and incident reporting", "Maintenance requests", "Gate and vehicle controls", "Department module creation"].map((item) => (
-          <View key={item} style={styles.checkRow}>
-            <Ionicons name="checkmark-circle" size={18} color="#0f766e" />
-            <Text style={styles.checkText}>{item}</Text>
-          </View>
-        ))}
+        <View style={styles.moduleHeader}>
+          <Text style={styles.cardTitle}>Profile completeness</Text>
+          <Text style={styles.completionValue}>{completeness}%</Text>
+        </View>
+        <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${Math.min(Math.max(completeness, 0), 100)}%` }]} /></View>
+        {(profileBundle?.missing_sections || []).length === 0 ? (
+          <Text style={styles.cardMeta}>All required HR profile packets are present.</Text>
+        ) : (
+          <Text style={styles.cardMeta}>Pending: {(profileBundle?.missing_sections || []).map(pretty).join(", ")}</Text>
+        )}
       </View>
+
+      <SectionHeader title="Employment" />
+      <View style={styles.largeCard}>
+        <ProfileRow label="Department" value={String(employee.department || summary.department || "-")} />
+        <ProfileRow label="Designation" value={String(employee.role || summary.designation || "-")} />
+        <ProfileRow label="Shift" value={String(shift.shift || employee.shift || summary.current_shift || "-")} />
+        <ProfileRow label="Work Location" value={String(location.location_id || summary.current_work_location || "-")} />
+        <ProfileRow label="Phone" value={String(employee.phone || "-")} />
+      </View>
+
+      <SectionHeader title="Salary And Payroll" />
+      <View style={styles.largeCard}>
+        <ProfileRow label="Structure" value={String(salary.structure_id || summary.current_salary_structure || "-")} />
+        <ProfileRow label="Gross Salary" value={String(salary.gross_salary || "-")} />
+        <ProfileRow label="CTC" value={String(salary.ctc || "-")} />
+        <ProfileRow label="Salary Slips" value={String(summary.salary_slips || analytics?.salary_slips?.length || 0)} />
+      </View>
+
+      <SectionHeader title="Private HR Packet" />
+      <View style={styles.profileGrid}>
+        <MiniMetric label="Private" value={profile?.private_details?.length || 0} />
+        <MiniMetric label="Docs" value={profile?.documents?.length || 0} />
+        <MiniMetric label="Emergency" value={profile?.emergency_contacts?.length || 0} />
+      </View>
+      {(profile?.documents || []).slice(0, 3).map((doc, index) => (
+        <MiniRecord key={`doc-${index}`} title={doc.document_type || doc.document_name || "Employee document"} meta={`${doc.document_number || "No number"} / ${doc.status || "Open"}`} />
+      ))}
+
+      <SectionHeader title="Device And Biometric" />
+      <View style={styles.largeCard}>
+        <ProfileRow label="Device" value={device.device_name || device.device_id || "No approved device"} />
+        <ProfileRow label="Device Status" value={device.approval_status || device.status || "-"} />
+        <ProfileRow label="Biometric Method" value={biometric.verification_method || "Not enrolled"} />
+        <ProfileRow label="Biometric Status" value={biometric.approval_status || biometric.status || "-"} />
+        <Text style={styles.cardMeta}>Only secure device assertion references are shown. Raw fingerprint data is never stored in the app.</Text>
+      </View>
+
+      <SectionHeader title="Lifecycle Timeline" />
+      {lifecycleRows.length === 0 ? (
+        <EmptyState title="No lifecycle records" body="Joining, transfer, salary revision, and exit events will appear here after HR records them." />
+      ) : lifecycleRows.slice(0, 6).map((item, index) => (
+        <MiniRecord key={`life-${index}`} title={item.event_type || item.lifecycle_event || "Lifecycle event"} meta={`${item.effective_date || "-"} / ${item.reason || item.status || "Recorded"}`} />
+      ))}
+
       <Pressable style={styles.secondaryButton} onPress={() => navigate({ name: "departments" })}><Text style={styles.secondaryButtonText}>Open ERP Departments</Text></Pressable>
       <Pressable style={styles.dangerButton} onPress={onSignOut}><Text style={styles.dangerButtonText}>Sign out</Text></Pressable>
     </ScreenScroll>
@@ -1037,6 +1125,33 @@ function CountTile({ label, value, color }: { label: string; value: number; colo
     <View style={styles.countTile}>
       <Text style={[styles.countValue, { color }]}>{value}</Text>
       <Text style={styles.countLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function MiniMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <View style={styles.profileMetric}>
+      <Text style={styles.profileMetricValue}>{value}</Text>
+      <Text style={styles.profileMetricLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function ProfileRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.profileRow}>
+      <Text style={styles.profileRowLabel}>{label}</Text>
+      <Text style={styles.profileRowValue}>{value || "-"}</Text>
+    </View>
+  );
+}
+
+function MiniRecord({ title, meta }: { title: string; meta: string }) {
+  return (
+    <View style={styles.miniRecord}>
+      <Text style={styles.miniRecordTitle}>{title}</Text>
+      <Text style={styles.miniRecordMeta}>{meta}</Text>
     </View>
   );
 }
@@ -1208,6 +1323,19 @@ const styles = StyleSheet.create({
   profileName: { marginTop: 12, color: "#0f172a", fontSize: 20, fontWeight: "900" },
   profileMeta: { marginTop: 4, color: "#64748b", fontSize: 13 },
   roleBadge: { overflow: "hidden", marginTop: 12, borderRadius: 12, backgroundColor: "#ccfbf1", color: "#0f766e", paddingHorizontal: 10, paddingVertical: 6, fontSize: 12, fontWeight: "900" },
+  completionValue: { color: "#0f766e", fontSize: 18, fontWeight: "900" },
+  progressTrack: { height: 10, overflow: "hidden", borderRadius: 999, backgroundColor: "#e2e8f0", marginTop: 12 },
+  progressFill: { height: 10, borderRadius: 999, backgroundColor: "#0f766e" },
+  profileGrid: { flexDirection: "row", gap: 8, marginBottom: 10 },
+  profileMetric: { flex: 1, borderRadius: 16, backgroundColor: "white", borderWidth: 1, borderColor: "#e2e8f0", padding: 14 },
+  profileMetricValue: { color: "#0f766e", fontSize: 22, fontWeight: "900" },
+  profileMetricLabel: { marginTop: 2, color: "#64748b", fontSize: 12, fontWeight: "800" },
+  profileRow: { flexDirection: "row", justifyContent: "space-between", gap: 12, borderTopWidth: 1, borderTopColor: "#f1f5f9", paddingTop: 11, marginTop: 11 },
+  profileRowLabel: { flex: 1, color: "#64748b", fontSize: 13, fontWeight: "800" },
+  profileRowValue: { flex: 1.3, color: "#0f172a", fontSize: 13, fontWeight: "900", textAlign: "right" },
+  miniRecord: { borderRadius: 16, backgroundColor: "white", padding: 14, borderWidth: 1, borderColor: "#e2e8f0", marginBottom: 8 },
+  miniRecordTitle: { color: "#0f172a", fontSize: 14, fontWeight: "900" },
+  miniRecordMeta: { marginTop: 4, color: "#64748b", fontSize: 12, lineHeight: 17 },
   checkRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 },
   checkText: { color: "#334155", fontSize: 14 },
   bottomNav: { position: "absolute", left: 12, right: 12, bottom: 12, flexDirection: "row", borderRadius: 24, backgroundColor: "white", borderWidth: 1, borderColor: "#e2e8f0", padding: 8, shadowColor: "#0f172a", shadowOpacity: 0.12, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 6 },

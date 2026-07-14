@@ -4798,7 +4798,64 @@ def v1_employee_profile(email: str = Depends(_verify)):
 
 @app.get("/api/v1/employee/analytics")
 def v1_employee_analytics(email: str = Depends(_verify)):
-    return _employee_analytics(_employee_code(email))
+    employee_code = _employee_code(email)
+    try:
+        return _employee_analytics(employee_code)
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+        return {
+            "employee_code": employee_code,
+            "summary": {
+                "employee_name": email,
+                "department": "",
+                "designation": "",
+                "current_shift": "",
+                "current_work_location": "",
+                "current_salary_structure": "",
+                "profile_completeness": 0,
+                "attendance_records": 0,
+                "leave_records": 0,
+                "salary_slips": 0,
+                "lifecycle_events": 0,
+            },
+            "percentages": {
+                "present_percentage": 0,
+                "absence_percentage": 0,
+                "on_time_day_in_percentage": 0,
+                "late_day_in_percentage": 0,
+                "successful_day_out_percentage": 0,
+                "out_of_fence_percentage": 0,
+                "leave_utilization_percentage": 0,
+                "overtime_percentage": 0,
+            },
+            "charts": {},
+            "salary_history": [],
+            "payroll_history": [],
+            "salary_slips": [],
+            "leave_history": [],
+            "lifecycle_timeline": [],
+            "adjustments": [],
+            "profile": {
+                "employee_code": employee_code,
+                "employee": None,
+                "private_details": [],
+                "bank_details": [],
+                "documents": [],
+                "emergency_contacts": [],
+                "lifecycle": [],
+                "salary_assignments": [],
+                "salary_revisions": [],
+                "location_assignments": [],
+                "shift_assignments": [],
+                "device_registrations": [],
+                "biometric_enrollments": [],
+                "salary_slips": [],
+                "attendance_records": [],
+                "profile_completeness": 0,
+                "missing_sections": ["employee_master"],
+            },
+        }
 
 @app.get("/api/v1/employee/attendance/history")
 def v1_employee_attendance_history(email: str = Depends(_verify)):
