@@ -553,6 +553,50 @@
         }
       }
     },
+    "/api/v1/employee/analytics": {
+      "get": {
+        "summary": "V1 Employee Analytics",
+        "operationId": "v1_employee_analytics_api_v1_employee_analytics_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/employee/attendance/history": {
       "get": {
         "summary": "V1 Employee Attendance History",
@@ -949,6 +993,59 @@
       "get": {
         "summary": "V1 Hr Employee Detail",
         "operationId": "v1_hr_employee_detail_api_v1_hr_employees__employee_code__get",
+        "parameters": [
+          {
+            "name": "employee_code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Employee Code"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hr/employees/{employee_code}/analytics": {
+      "get": {
+        "summary": "V1 Hr Employee Analytics",
+        "operationId": "v1_hr_employee_analytics_api_v1_hr_employees__employee_code__analytics_get",
         "parameters": [
           {
             "name": "employee_code",

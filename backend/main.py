@@ -1323,6 +1323,146 @@ def _employee_bundle(employee_code: str):
         "missing_sections": missing,
     }
 
+def _bucket_count(rows: list[dict[str, Any]], key: str, fallback: str = "Unknown") -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        value = str(row.get(key) or fallback).strip() or fallback
+        counts[value] = counts.get(value, 0) + 1
+    return counts
+
+def _percentage(part: int, total: int) -> int:
+    return 0 if total <= 0 else round((part / total) * 100)
+
+def _employee_analytics(employee_code: str):
+    bundle = _employee_bundle(employee_code)
+    if not bundle["employee"]:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    employee = bundle["employee"] or {}
+    actual_employee_code = employee.get("employee_code") or employee_code
+    if actual_employee_code and actual_employee_code.strip().lower() != employee_code.strip().lower():
+        employee_code = actual_employee_code
+        bundle = _employee_bundle(employee_code)
+        employee = bundle["employee"] or employee
+    attendance_records = bundle["attendance_records"]
+    legacy_attendance = [item.get("data", {}) for item in _records_for_employee("attendance", employee_code, 1000)]
+    attendance = attendance_records + [
+        {
+            "attendance_date": row.get("date", ""),
+            "day_in_time": row.get("check_in", ""),
+            "day_out_time": row.get("check_out", ""),
+            "attendance_status": row.get("status", ""),
+            "shift": row.get("shift", ""),
+            "day_in_geofence_status": row.get("gps_area", ""),
+            "day_out_geofence_status": row.get("gps_area", ""),
+        }
+        for row in legacy_attendance
+    ]
+    total_attendance = len(attendance)
+    present = len([row for row in attendance if str(row.get("attendance_status", "")).lower() in {"present", "late", "early exit", "overtime"} or row.get("day_in_time")])
+    absent = len([row for row in attendance if str(row.get("attendance_status", "")).lower() == "absent"])
+    late = len([row for row in attendance if _money(row.get("late_duration_minutes"), 0) > 0 or str(row.get("attendance_status", "")).lower() == "late"])
+    missing_day_out = len([row for row in attendance if row.get("day_in_time") and not row.get("day_out_time")])
+    early_exit = len([row for row in attendance if _money(row.get("early_exit_minutes"), 0) > 0 or str(row.get("attendance_status", "")).lower() == "early exit"])
+    overtime = len([row for row in attendance if _money(row.get("overtime_minutes"), 0) > 0 or str(row.get("attendance_status", "")).lower() == "overtime"])
+    out_of_fence = len([
+        row for row in attendance
+        if (row.get("day_in_geofence_status") or row.get("day_out_geofence_status") or "").strip() in {"Outside Fence", "Out of Fence", "Accuracy Rejected", "Geofence Not Assigned"}
+    ])
+    leave_applications = [item.get("data", {}) for item in _records_for_employee("leave_applications", employee_code, 500)]
+    legacy_leave = [item.get("data", {}) for item in _records_for_employee("leave_requests", employee_code, 500)]
+    leave_rows = leave_applications + [
+        {
+            "leave_type": row.get("leave_type", ""),
+            "approval_status": row.get("status", ""),
+            "total_leave_days": "1",
+            "payroll_impact": "Paid",
+            "start_date": row.get("from_date", ""),
+            "end_date": row.get("to_date", ""),
+        }
+        for row in legacy_leave
+    ]
+    salary_assignment = bundle["salary_assignments"][0] if bundle["salary_assignments"] else {}
+    salary_revisions = bundle["salary_revisions"]
+    salary_slips = bundle["salary_slips"]
+    payroll_results = [item.get("data", {}) for item in _records_for_employee("payroll_employee_results", employee_code, 500)]
+    adjustments = [item.get("data", {}) for item in _records_for_employee("payroll_adjustments", employee_code, 500)]
+    basic = _money(salary_assignment.get("basic_salary"), 0)
+    gross = _money(salary_assignment.get("gross_salary"), 0)
+    allowances = _money(salary_assignment.get("allowances"), max(gross - basic, 0))
+    deductions = _money(salary_assignment.get("deductions"), 0)
+    employer = _money(salary_assignment.get("employer_contributions"), 0)
+    latest_slip = salary_slips[0] if salary_slips else {}
+    latest_net = _money(latest_slip.get("net_pay"), _money(salary_assignment.get("net_salary_estimate"), max(gross - deductions, 0)))
+    attendance_distribution = _bucket_count([
+        {"status": row.get("attendance_status") or ("Present" if row.get("day_in_time") else "Unknown")}
+        for row in attendance
+    ], "status")
+    geofence_distribution = _bucket_count([
+        {"status": row.get("day_out_geofence_status") or row.get("day_in_geofence_status") or "Location Not Verified"}
+        for row in attendance
+    ], "status")
+    leave_distribution = _bucket_count([
+        {"leave_type": row.get("leave_type") or "Leave"}
+        for row in leave_rows
+    ], "leave_type")
+    lifecycle = sorted(bundle["lifecycle"], key=lambda row: row.get("effective_date", ""), reverse=True)
+    return {
+        "employee_code": employee_code,
+        "summary": {
+            "employee_name": employee.get("full_name", employee_code),
+            "department": employee.get("department", ""),
+            "designation": employee.get("role", ""),
+            "current_shift": employee.get("shift", ""),
+            "current_work_location": (bundle["location_assignments"][0].get("location_id") if bundle["location_assignments"] else ""),
+            "current_salary_structure": salary_assignment.get("structure_id", ""),
+            "profile_completeness": bundle["profile_completeness"],
+            "attendance_records": total_attendance,
+            "leave_records": len(leave_rows),
+            "salary_slips": len(salary_slips),
+            "lifecycle_events": len(lifecycle),
+        },
+        "percentages": {
+            "present_percentage": _percentage(present, total_attendance),
+            "absence_percentage": _percentage(absent, total_attendance),
+            "on_time_day_in_percentage": _percentage(max(present - late, 0), total_attendance),
+            "late_day_in_percentage": _percentage(late, total_attendance),
+            "successful_day_out_percentage": _percentage(max(total_attendance - missing_day_out, 0), total_attendance),
+            "out_of_fence_percentage": _percentage(out_of_fence, total_attendance),
+            "leave_utilization_percentage": _percentage(len([row for row in leave_rows if (row.get("approval_status") or row.get("status")) == "Approved"]), max(len(leave_rows), 1)),
+            "overtime_percentage": _percentage(overtime, total_attendance),
+        },
+        "charts": {
+            "attendance_distribution": attendance_distribution,
+            "day_in_punctuality": {
+                "On Time": max(present - late, 0),
+                "Late": late,
+                "Missing Day In": len([row for row in attendance if not row.get("day_in_time")]),
+            },
+            "day_out_compliance": {
+                "Completed": max(total_attendance - missing_day_out - early_exit, 0),
+                "Early Exit": early_exit,
+                "Missing Day Out": missing_day_out,
+                "Overtime": overtime,
+            },
+            "geofence_compliance": geofence_distribution,
+            "leave_distribution": leave_distribution,
+            "monthly_salary_composition": {
+                "Basic Salary": round(basic, 2),
+                "Allowances": round(allowances, 2),
+                "Employer Contributions": round(employer, 2),
+                "Deductions": round(deductions, 2),
+                "Net Salary": round(latest_net, 2),
+            },
+        },
+        "salary_history": salary_revisions[:20],
+        "payroll_history": payroll_results[:20],
+        "salary_slips": salary_slips[:12],
+        "leave_history": leave_rows[:20],
+        "lifecycle_timeline": lifecycle[:30],
+        "adjustments": adjustments[:20],
+        "profile": bundle,
+    }
+
 def _trusted_biometric_enrollment(employee_code: str, method: str, trusted_device_id: str):
     for item in _records_for_employee("employee_biometric_enrollments", employee_code, 100):
         data = item.get("data", {})
@@ -4276,6 +4416,10 @@ def v1_employee_profile(email: str = Depends(_verify)):
         "lifecycle": [item.get("data", {}) for item in _records_for_employee("employee_lifecycle_events", employee_code, 100)],
     }
 
+@app.get("/api/v1/employee/analytics")
+def v1_employee_analytics(email: str = Depends(_verify)):
+    return _employee_analytics(_employee_code(email))
+
 @app.get("/api/v1/employee/attendance/history")
 def v1_employee_attendance_history(email: str = Depends(_verify)):
     employee_code = _employee_code(email)
@@ -4416,6 +4560,11 @@ def v1_hr_employee_detail(employee_code: str, email: str = Depends(_verify)):
     if not bundle["employee"]:
         raise HTTPException(status_code=404, detail="Employee not found")
     return bundle
+
+@app.get("/api/v1/hr/employees/{employee_code}/analytics")
+def v1_hr_employee_analytics(employee_code: str, email: str = Depends(_verify)):
+    _require_permission(email, "hr:read")
+    return _employee_analytics(employee_code)
 
 @app.post("/api/v1/hr/employees/onboard")
 def v1_hr_employee_onboard(payload: HrEmployeeOnboardingRequest, email: str = Depends(_verify)):

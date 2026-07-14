@@ -28,6 +28,19 @@ type EmployeesDashboard = {
   missing_private_or_sensitive_notice: string;
 };
 
+type EmployeeAnalytics = {
+  employee_code: string;
+  summary: Record<string, string | number>;
+  percentages: Record<string, number>;
+  charts: Record<string, Record<string, number>>;
+  salary_history: Record<string, string>[];
+  payroll_history: Record<string, string>[];
+  salary_slips: Record<string, string>[];
+  leave_history: Record<string, string>[];
+  lifecycle_timeline: Record<string, string>[];
+  adjustments: Record<string, string>[];
+};
+
 type FormState = {
   employee_code: string;
   full_name: string;
@@ -158,6 +171,14 @@ async function requestEmployeesDashboard(token: string) {
   return (await response.json()) as EmployeesDashboard;
 }
 
+async function requestEmployeeAnalytics(token: string, employeeCode: string) {
+  const response = await fetch(`${API_BASE}/api/v1/hr/employees/${encodeURIComponent(employeeCode)}/analytics`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error("Employee analytics API failed");
+  return (await response.json()) as EmployeeAnalytics;
+}
+
 function labelFor(value: string) {
   return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
@@ -166,12 +187,30 @@ function money(value: string | undefined) {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(Number(value || 0));
 }
 
+function exportAnalyticsCsv(analytics: EmployeeAnalytics) {
+  const rows = [
+    ["Section", "Metric", "Value"],
+    ...Object.entries(analytics.summary).map(([key, value]) => ["Summary", labelFor(key), String(value)]),
+    ...Object.entries(analytics.percentages).map(([key, value]) => ["Percentage", labelFor(key), `${value}%`]),
+    ...Object.entries(analytics.charts).flatMap(([chart, values]) => Object.entries(values).map(([key, value]) => [labelFor(chart), key, String(value)])),
+  ];
+  const csv = rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${analytics.employee_code}-analytics.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function HrEmployeesPage() {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<EmployeesDashboard | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [query, setQuery] = useState("");
   const [selectedCode, setSelectedCode] = useState("");
+  const [analytics, setAnalytics] = useState<EmployeeAnalytics | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
@@ -189,6 +228,16 @@ export default function HrEmployeesPage() {
       })
       .catch((err) => setError(err instanceof Error ? err.message : "HR employees API failed"));
   }, [router]);
+
+  useEffect(() => {
+    const token = localStorage.getItem("factorypulse_token");
+    if (!token || !selectedCode) {
+      return;
+    }
+    requestEmployeeAnalytics(token, selectedCode)
+      .then(setAnalytics)
+      .catch(() => setAnalytics(null));
+  }, [selectedCode]);
 
   const employees = useMemo(() => {
     const value = query.trim().toLowerCase();
@@ -345,7 +394,7 @@ export default function HrEmployeesPage() {
               </div>
             </div>
 
-            <EmployeeDetail employee={selected} />
+            <EmployeeDetail employee={selected} analytics={analytics?.employee_code === selected?.employee_code ? analytics : null} />
           </section>
         </div>
       </section>
@@ -353,7 +402,7 @@ export default function HrEmployeesPage() {
   );
 }
 
-function EmployeeDetail({ employee }: { employee: EmployeeBundle | null }) {
+function EmployeeDetail({ employee, analytics }: { employee: EmployeeBundle | null; analytics: EmployeeAnalytics | null }) {
   if (!employee) {
     return <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">Select an employee to inspect the full packet.</div>;
   }
@@ -378,7 +427,10 @@ function EmployeeDetail({ employee }: { employee: EmployeeBundle | null }) {
           <h2 className="text-xl font-semibold">{employee.employee?.full_name || employee.employee_code}</h2>
           <p className="mt-1 text-sm text-slate-500">{employee.employee_code} / {employee.employee?.role || "Role"} / {employee.employee?.shift || "Shift"}</p>
         </div>
-        <span className="rounded-lg bg-teal-50 px-3 py-2 text-sm font-semibold text-teal-800">{employee.profile_completeness}% complete</span>
+        <div className="flex flex-wrap gap-2">
+          {analytics ? <button onClick={() => exportAnalyticsCsv(analytics)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-teal-600">Export CSV</button> : null}
+          <span className="rounded-lg bg-teal-50 px-3 py-2 text-sm font-semibold text-teal-800">{employee.profile_completeness}% complete</span>
+        </div>
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -405,6 +457,33 @@ function EmployeeDetail({ employee }: { employee: EmployeeBundle | null }) {
         <InfoCard title="Salary" lines={[`Gross ${money(salary?.gross_salary)}`, `CTC ${money(salary?.ctc)}`, `Status ${salary?.status || "Not assigned"}`]} />
         <InfoCard title="Trusted Device" lines={[device?.device_id || "Not enrolled", device?.platform || "Platform missing", employee.biometric_enrollments[0]?.privacy_notice || "No biometric metadata record"]} />
       </div>
+
+      {analytics ? (
+        <section className="mt-4 space-y-4">
+          <div className="grid gap-2 md:grid-cols-4">
+            <MetricCard label="Present" value={`${analytics.percentages.present_percentage || 0}%`} />
+            <MetricCard label="Late" value={`${analytics.percentages.late_day_in_percentage || 0}%`} />
+            <MetricCard label="Day Out" value={`${analytics.percentages.successful_day_out_percentage || 0}%`} />
+            <MetricCard label="Fence" value={`${100 - (analytics.percentages.out_of_fence_percentage || 0)}%`} />
+          </div>
+          <div className="grid gap-3 xl:grid-cols-2">
+            <ChartCard title="Attendance Distribution" values={analytics.charts.attendance_distribution || {}} />
+            <ChartCard title="Day In Punctuality" values={analytics.charts.day_in_punctuality || {}} />
+            <ChartCard title="Day Out Compliance" values={analytics.charts.day_out_compliance || {}} />
+            <ChartCard title="Geofence Compliance" values={analytics.charts.geofence_compliance || {}} />
+          </div>
+          <div className="grid gap-3 xl:grid-cols-2">
+            <ChartCard title="Leave Distribution" values={analytics.charts.leave_distribution || {}} />
+            <ChartCard title="Salary Composition" values={analytics.charts.monthly_salary_composition || {}} currency />
+          </div>
+          <div className="grid gap-3 xl:grid-cols-2">
+            <MiniTable title="Salary History" rows={analytics.salary_history.length ? analytics.salary_history : analytics.salary_slips} columns={["effective_date", "revision_type", "gross_salary", "ctc", "net_pay", "status"]} />
+            <MiniTable title="Payroll & Adjustments" rows={[...analytics.payroll_history, ...analytics.adjustments]} columns={["payroll_run", "payroll_month", "adjustment_type", "amount", "net_pay", "approval_status"]} />
+          </div>
+        </section>
+      ) : (
+        <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50 p-3 text-sm text-slate-500">Analytics will appear after this employee has attendance, leave, payroll, or lifecycle records.</div>
+      )}
 
       <section className="mt-4">
         <h3 className="text-sm font-semibold text-slate-700">Lifecycle</h3>
@@ -434,6 +513,75 @@ function InfoCard({ title, lines }: { title: string; lines: string[] }) {
         {lines.map((line, index) => (
           <div key={`${title}-${index}`} className="line-clamp-2 text-xs text-slate-600">{line}</div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3">
+      <div className="text-xs font-medium text-slate-500">{label}</div>
+      <div className="mt-1 text-xl font-semibold text-slate-950">{value}</div>
+    </div>
+  );
+}
+
+const CHART_COLORS = ["#0f766e", "#4f46e5", "#c026d3", "#ea580c", "#dc2626", "#64748b"];
+
+function ChartCard({ title, values, currency = false }: { title: string; values: Record<string, number>; currency?: boolean }) {
+  const entries = Object.entries(values).filter(([, value]) => Number(value) > 0);
+  const total = entries.reduce((sum, [, value]) => sum + Number(value), 0);
+  let cursor = 0;
+  const segments = entries.map(([, value], index) => {
+    const start = cursor;
+    const size = total ? (Number(value) / total) * 100 : 0;
+    cursor += size;
+    return `${CHART_COLORS[index % CHART_COLORS.length]} ${start}% ${cursor}%`;
+  });
+  const background = segments.length ? `conic-gradient(${segments.join(", ")})` : "conic-gradient(#e2e8f0 0 100%)";
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-sm font-semibold text-slate-800">{title}</div>
+        <div className="text-xs font-medium text-slate-500">{currency ? money(String(total)) : total}</div>
+      </div>
+      <div className="mt-3 grid grid-cols-[88px_1fr] gap-3">
+        <div className="relative h-20 w-20 rounded-full" style={{ background }}>
+          <div className="absolute inset-4 rounded-full bg-slate-50" />
+        </div>
+        <div className="min-w-0 space-y-1">
+          {entries.length === 0 ? <div className="text-xs text-slate-500">No data</div> : entries.slice(0, 6).map(([label, value], index) => (
+            <div key={label} className="flex items-center justify-between gap-2 text-xs">
+              <span className="min-w-0 truncate text-slate-600"><span className="mr-2 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }} />{label}</span>
+              <span className="font-semibold text-slate-800">{currency ? money(String(value)) : value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MiniTable({ title, rows, columns }: { title: string; rows: Record<string, string>[]; columns: string[] }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3">
+      <div className="text-sm font-semibold text-slate-800">{title}</div>
+      <div className="mt-2 overflow-x-auto">
+        <table className="min-w-full text-left text-xs">
+          <thead className="bg-slate-50 text-slate-500">
+            <tr>{columns.slice(0, 4).map((column) => <th key={column} className="p-2">{labelFor(column)}</th>)}</tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr><td className="p-3 text-slate-500" colSpan={4}>No records</td></tr>
+            ) : rows.slice(0, 6).map((row, index) => (
+              <tr key={`${title}-${index}`} className="border-t border-slate-100">
+                {columns.slice(0, 4).map((column) => <td key={column} className="max-w-32 truncate p-2 text-slate-700">{row[column] || "-"}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
