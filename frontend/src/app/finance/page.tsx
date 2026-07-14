@@ -115,6 +115,7 @@ export default function FinancePage() {
             <Link href="/finance/salary" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:border-emerald-600">Salary Structures</Link>
             <Link href="/finance/adjustments" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:border-teal-600">Adjustments</Link>
             <Link href="/finance/payments" className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-700 hover:border-violet-600">Payments</Link>
+            <Link href="/finance/statutory" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 hover:border-amber-600">Statutory</Link>
             <Link href="/finance/settings" className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-700 hover:border-sky-600">Policy Settings</Link>
             <Link href="/departments/finance?module=payroll_runs" className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">Payroll Runs</Link>
           </div>

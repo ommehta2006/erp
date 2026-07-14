@@ -2800,6 +2800,158 @@
         }
       }
     },
+    "/api/v1/finance/statutory-dashboard": {
+      "get": {
+        "summary": "V1 Finance Statutory Dashboard",
+        "operationId": "v1_finance_statutory_dashboard_api_v1_finance_statutory_dashboard_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/finance/statutory-rules": {
+      "post": {
+        "summary": "V1 Finance Save Statutory Rule",
+        "operationId": "v1_finance_save_statutory_rule_api_v1_finance_statutory_rules_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PayrollStatutoryRuleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/finance/statutory-rules/decision": {
+      "post": {
+        "summary": "V1 Finance Decide Statutory Rule",
+        "operationId": "v1_finance_decide_statutory_rule_api_v1_finance_statutory_rules_decision_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PayrollStatutoryRuleDecisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/finance/adjustments-dashboard": {
       "get": {
         "summary": "V1 Finance Adjustments Dashboard",
@@ -6395,6 +6547,180 @@
           "decision"
         ],
         "title": "PayrollRunDecisionRequest"
+      },
+      "PayrollStatutoryRuleDecisionRequest": {
+        "properties": {
+          "rule_id": {
+            "type": "string",
+            "title": "Rule Id"
+          },
+          "decision": {
+            "type": "string",
+            "title": "Decision"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rule_id",
+          "decision"
+        ],
+        "title": "PayrollStatutoryRuleDecisionRequest"
+      },
+      "PayrollStatutoryRuleRequest": {
+        "properties": {
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Id"
+          },
+          "rule_name": {
+            "type": "string",
+            "title": "Rule Name"
+          },
+          "component_name": {
+            "type": "string",
+            "title": "Component Name"
+          },
+          "deduction_type": {
+            "type": "string",
+            "title": "Deduction Type",
+            "default": "Percentage"
+          },
+          "calculation_base": {
+            "type": "string",
+            "title": "Calculation Base",
+            "default": "Gross Pay"
+          },
+          "rate_percent": {
+            "type": "number",
+            "title": "Rate Percent",
+            "default": 0
+          },
+          "fixed_amount": {
+            "type": "number",
+            "title": "Fixed Amount",
+            "default": 0
+          },
+          "monthly_cap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Cap"
+          },
+          "annual_exemption": {
+            "type": "number",
+            "title": "Annual Exemption",
+            "default": 0
+          },
+          "employee_min_gross": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee Min Gross"
+          },
+          "employee_max_gross": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee Max Gross"
+          },
+          "slab_config": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slab Config"
+          },
+          "jurisdiction": {
+            "type": "string",
+            "title": "Jurisdiction",
+            "default": "Company Policy"
+          },
+          "employer_contribution": {
+            "type": "boolean",
+            "title": "Employer Contribution",
+            "default": false
+          },
+          "employee_contribution": {
+            "type": "boolean",
+            "title": "Employee Contribution",
+            "default": true
+          },
+          "effective_start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Start Date"
+          },
+          "effective_end_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective End Date"
+          },
+          "approval_status": {
+            "type": "string",
+            "title": "Approval Status",
+            "default": "Approved"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "Active"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rule_name",
+          "component_name"
+        ],
+        "title": "PayrollStatutoryRuleRequest"
       },
       "RecordCreate": {
         "properties": {

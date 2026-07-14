@@ -337,6 +337,32 @@ class PayrollPolicyRequest(BaseModel):
     approval_status: str = "Approved"
     status: str = "Active"
 
+class PayrollStatutoryRuleRequest(BaseModel):
+    rule_id: str | None = None
+    rule_name: str
+    component_name: str
+    deduction_type: str = "Percentage"
+    calculation_base: str = "Gross Pay"
+    rate_percent: float = 0
+    fixed_amount: float = 0
+    monthly_cap: float | None = None
+    annual_exemption: float = 0
+    employee_min_gross: float | None = None
+    employee_max_gross: float | None = None
+    slab_config: str | None = None
+    jurisdiction: str = "Company Policy"
+    employer_contribution: bool = False
+    employee_contribution: bool = True
+    effective_start_date: str | None = None
+    effective_end_date: str | None = None
+    approval_status: str = "Approved"
+    status: str = "Active"
+
+class PayrollStatutoryRuleDecisionRequest(BaseModel):
+    rule_id: str
+    decision: str
+    remarks: str | None = None
+
 class SalaryStructureRequest(BaseModel):
     structure_id: str | None = None
     structure_name: str
@@ -2206,6 +2232,8 @@ PAYROLL_PAYMENT_READY_STATUSES = {"Approved", "Locked", "Payment Processing", "P
 PAYROLL_PAYMENT_FINAL_STATUSES = {"Paid", "Cancelled", "Reversed"}
 FINANCE_ADJUSTMENT_LIMIT = float(os.getenv("FINANCE_ADJUSTMENT_LIMIT", "50000"))
 PAYROLL_PRORATION_METHODS = {"Calendar Day", "Working Day", "Fixed Divisor", "Organization Specific Formula"}
+STATUTORY_DEDUCTION_TYPES = {"Fixed", "Percentage", "Slab"}
+STATUTORY_CALCULATION_BASES = {"Gross Pay", "Basic Salary", "Net Before Statutory"}
 
 def _csv_values(value: str | None) -> list[str]:
     if not value:
@@ -2831,6 +2859,226 @@ def _payment_batch_csv(batch_id: str):
     csv_body = "\n".join(",".join(cell(value) for value in row) for row in rows)
     return Response(content=csv_body, media_type="text/csv", headers={"Content-Disposition": f"attachment; filename={data.get('batch_id', 'payment_batch')}.csv"})
 
+def _statutory_rule_status(item: dict[str, Any]):
+    data = item.get("data", {})
+    return data.get("approval_status") or item.get("status") or data.get("status")
+
+def _rule_effective_for_period(data: dict[str, Any], start: date, end: date):
+    effective_start = data.get("effective_start_date", "")
+    effective_end = data.get("effective_end_date", "")
+    if effective_start:
+        try:
+            if _parse_iso_date(effective_start, "effective_start_date") > end:
+                return False
+        except HTTPException:
+            return False
+    if effective_end:
+        try:
+            if _parse_iso_date(effective_end, "effective_end_date") < start:
+                return False
+        except HTTPException:
+            return False
+    return True
+
+def _active_statutory_rules(start: date, end: date):
+    rows = _items("payroll_statutory_rules", 500)
+    return [
+        item for item in rows
+        if (item.get("data", {}).get("status") or item.get("status")) == "Active"
+        and (item.get("data", {}).get("approval_status") or "Approved") == "Approved"
+        and _rule_effective_for_period(item.get("data", {}), start, end)
+    ]
+
+def _slab_deduction_amount(base_amount: float, slab_config: str):
+    if not slab_config:
+        return 0.0
+    try:
+        slabs = json.loads(slab_config)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="slab_config must be valid JSON.") from exc
+    if not isinstance(slabs, list):
+        raise HTTPException(status_code=422, detail="slab_config must be a JSON array.")
+    amount = 0.0
+    lower = 0.0
+    for raw_slab in slabs:
+        if not isinstance(raw_slab, dict):
+            continue
+        upper_raw = raw_slab.get("up_to", raw_slab.get("upto"))
+        upper = float(upper_raw) if upper_raw not in (None, "", "above") else None
+        rate = float(raw_slab.get("rate", 0))
+        fixed = float(raw_slab.get("fixed", 0))
+        if upper is None:
+            taxable = max(base_amount - lower, 0)
+        else:
+            taxable = max(min(base_amount, upper) - lower, 0)
+        amount += fixed + (taxable * rate / 100)
+        if upper is None or base_amount <= upper:
+            break
+        lower = upper
+    return round(amount, 2)
+
+def _statutory_base_amount(base: str, prorated_gross: float, salary_data: dict[str, Any], net_before_statutory: float):
+    if base == "Basic Salary":
+        basic = _money(salary_data.get("basic_salary"))
+        return basic if basic > 0 else prorated_gross
+    if base == "Net Before Statutory":
+        return net_before_statutory
+    return prorated_gross
+
+def _calculate_statutory_lines(employee_code: str, prorated_gross: float, salary_data: dict[str, Any], net_before_statutory: float, rules: list[dict[str, Any]]):
+    lines = []
+    employee_deductions = 0.0
+    employer_contributions = 0.0
+    for rule in rules:
+        data = rule.get("data", {})
+        monthly_gross = _money(salary_data.get("gross_salary") or salary_data.get("ctc"))
+        min_gross = _money(data.get("employee_min_gross"), 0)
+        max_gross = _money(data.get("employee_max_gross"), 0)
+        if min_gross and monthly_gross < min_gross:
+            continue
+        if max_gross and monthly_gross > max_gross:
+            continue
+        deduction_type = data.get("deduction_type") or "Percentage"
+        base_name = data.get("calculation_base") or "Gross Pay"
+        base_amount = max(_statutory_base_amount(base_name, prorated_gross, salary_data, net_before_statutory), 0)
+        annual_exemption = _money(data.get("annual_exemption"), 0)
+        monthly_exemption = annual_exemption / 12 if annual_exemption > 0 else 0
+        taxable_base = max(base_amount - monthly_exemption, 0)
+        if deduction_type == "Fixed":
+            amount = _money(data.get("fixed_amount"))
+            formula = f"fixed_amount:{amount:.2f}"
+        elif deduction_type == "Slab":
+            amount = _slab_deduction_amount(taxable_base, data.get("slab_config", ""))
+            formula = f"progressive_slab({base_name} - monthly_exemption:{monthly_exemption:.2f})"
+        else:
+            rate = _money(data.get("rate_percent"))
+            amount = round(taxable_base * rate / 100, 2)
+            formula = f"({base_name}:{base_amount:.2f} - monthly_exemption:{monthly_exemption:.2f}) * {rate:.2f}%"
+        cap = _money(data.get("monthly_cap"), 0)
+        if cap > 0:
+            amount = min(amount, cap)
+            formula = f"{formula}; capped:{cap:.2f}"
+        amount = max(round(amount, 2), 0)
+        if amount <= 0:
+            continue
+        employee_flag = _bool_setting(data.get("employee_contribution"), True)
+        employer_flag = _bool_setting(data.get("employer_contribution"), False)
+        component_type = "Deduction" if employee_flag else "Employer Contribution"
+        if employee_flag:
+            employee_deductions += amount
+        if employer_flag:
+            employer_contributions += amount
+        lines.append({
+            "component_name": data.get("component_name") or data.get("rule_name") or "Statutory Deduction",
+            "component_type": component_type,
+            "quantity": "1.00",
+            "rate": f"{amount:.2f}",
+            "amount": f"{amount:.2f}",
+            "formula": formula,
+            "source": "payroll_statutory_rules",
+            "rule_id": data.get("rule_id", rule.get("id", "")),
+            "jurisdiction": data.get("jurisdiction", ""),
+        })
+    return {
+        "employee_deductions": round(employee_deductions, 2),
+        "employer_contributions": round(employer_contributions, 2),
+        "lines": lines,
+    }
+
+def _statutory_dashboard():
+    rules = _items("payroll_statutory_rules", 500)
+    active = [item for item in rules if (item.get("data", {}).get("status") or item.get("status")) == "Active"]
+    approved = [item for item in rules if (item.get("data", {}).get("approval_status") or "Approved") == "Approved"]
+    pending = [item for item in rules if (item.get("data", {}).get("approval_status") or item.get("status")) in {"Pending", "Pending Approval", "Draft"}]
+    tax_records = _items("tax_records", 200)
+    return {
+        "stats": {
+            "rules": len(rules),
+            "active_rules": len(active),
+            "approved_rules": len(approved),
+            "pending_rules": len(pending),
+            "tax_records": len(tax_records),
+        },
+        "rules": rules[:100],
+        "tax_records": tax_records[:50],
+        "deduction_types": sorted(STATUTORY_DEDUCTION_TYPES),
+        "calculation_bases": sorted(STATUTORY_CALCULATION_BASES),
+    }
+
+def _save_statutory_rule(payload: PayrollStatutoryRuleRequest, actor: str):
+    deduction_type = payload.deduction_type.strip().title()
+    if deduction_type not in STATUTORY_DEDUCTION_TYPES:
+        raise HTTPException(status_code=422, detail=f"deduction_type must be one of: {', '.join(sorted(STATUTORY_DEDUCTION_TYPES))}")
+    calculation_base = payload.calculation_base.strip()
+    if calculation_base not in STATUTORY_CALCULATION_BASES:
+        raise HTTPException(status_code=422, detail=f"calculation_base must be one of: {', '.join(sorted(STATUTORY_CALCULATION_BASES))}")
+    if deduction_type == "Percentage" and payload.rate_percent <= 0:
+        raise HTTPException(status_code=422, detail="rate_percent is required for Percentage statutory rules.")
+    if deduction_type == "Fixed" and payload.fixed_amount <= 0:
+        raise HTTPException(status_code=422, detail="fixed_amount is required for Fixed statutory rules.")
+    if deduction_type == "Slab":
+        _slab_deduction_amount(100000, payload.slab_config or "")
+    if payload.monthly_cap is not None and payload.monthly_cap < 0:
+        raise HTTPException(status_code=422, detail="monthly_cap cannot be negative.")
+    if payload.employee_min_gross is not None and payload.employee_min_gross < 0:
+        raise HTTPException(status_code=422, detail="employee_min_gross cannot be negative.")
+    if payload.employee_max_gross is not None and payload.employee_max_gross < 0:
+        raise HTTPException(status_code=422, detail="employee_max_gross cannot be negative.")
+    if payload.employee_min_gross and payload.employee_max_gross and payload.employee_min_gross > payload.employee_max_gross:
+        raise HTTPException(status_code=422, detail="employee_min_gross cannot be greater than employee_max_gross.")
+    if payload.effective_start_date:
+        _parse_iso_date(payload.effective_start_date, "effective_start_date")
+    if payload.effective_end_date:
+        _parse_iso_date(payload.effective_end_date, "effective_end_date")
+    item = storage.create_record("payroll_statutory_rules", {
+        "rule_id": payload.rule_id or _new_ref("STAT"),
+        "rule_name": payload.rule_name.strip(),
+        "component_name": payload.component_name.strip(),
+        "deduction_type": deduction_type,
+        "calculation_base": calculation_base,
+        "rate_percent": f"{payload.rate_percent:.4f}",
+        "fixed_amount": f"{payload.fixed_amount:.2f}",
+        "monthly_cap": f"{payload.monthly_cap:.2f}" if payload.monthly_cap is not None else "",
+        "annual_exemption": f"{payload.annual_exemption:.2f}",
+        "employee_min_gross": f"{payload.employee_min_gross:.2f}" if payload.employee_min_gross is not None else "",
+        "employee_max_gross": f"{payload.employee_max_gross:.2f}" if payload.employee_max_gross is not None else "",
+        "slab_config": _clean_text(payload.slab_config),
+        "jurisdiction": payload.jurisdiction.strip() or "Company Policy",
+        "employer_contribution": "true" if payload.employer_contribution else "false",
+        "employee_contribution": "true" if payload.employee_contribution else "false",
+        "effective_start_date": _clean_text(payload.effective_start_date),
+        "effective_end_date": _clean_text(payload.effective_end_date),
+        "created_by": actor,
+        "approved_by": actor if payload.approval_status == "Approved" else "",
+        "approval_status": payload.approval_status.strip() or "Approved",
+        "status": payload.status.strip() or "Active",
+    })
+    _write_audit(actor, "save_statutory_rule", "payroll_statutory_rules", item.get("data", {}).get("rule_id", item.get("id", "")), item.get("data", {}), "Finance statutory payroll rule saved.")
+    return {"item": item, "dashboard": _statutory_dashboard()}
+
+def _decide_statutory_rule(payload: PayrollStatutoryRuleDecisionRequest, actor: str):
+    normalized = payload.rule_id.strip().lower()
+    item = next(
+        (
+            row for row in _items("payroll_statutory_rules", 1000)
+            if row.get("id", "").lower() == normalized or str(row.get("data", {}).get("rule_id", "")).strip().lower() == normalized
+        ),
+        None,
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Statutory rule not found.")
+    decision = payload.decision.strip().title()
+    if decision not in {"Approved", "Rejected", "Active", "Inactive"}:
+        raise HTTPException(status_code=422, detail="decision must be Approved, Rejected, Active, or Inactive.")
+    update_payload = {"status": decision if decision in {"Active", "Inactive"} else item.get("data", {}).get("status", item.get("status", "Active"))}
+    if decision in {"Approved", "Rejected"}:
+        update_payload["approval_status"] = decision
+        if decision == "Approved":
+            update_payload["approved_by"] = actor
+    updated = storage.update_record("payroll_statutory_rules", item.get("id", ""), update_payload)
+    _write_audit(actor, f"{decision.lower()}_statutory_rule", "payroll_statutory_rules", item.get("data", {}).get("rule_id", item.get("id", "")), updated.get("data", {}), payload.remarks or decision)
+    return {"item": updated, "dashboard": _statutory_dashboard()}
+
 def _payroll_calculation(payload: PayrollGenerateRequest, actor: str):
     start = _parse_iso_date(payload.start_date, "start_date")
     end = _parse_iso_date(payload.end_date, "end_date")
@@ -2847,6 +3095,7 @@ def _payroll_calculation(payload: PayrollGenerateRequest, actor: str):
     legacy_attendance = _items("attendance", 1000)
     leave_applications = _items("leave_applications", 1000)
     adjustments = _items("payroll_adjustments", 1000)
+    statutory_rules = _active_statutory_rules(start, end)
     employee_codes = _payroll_employee_codes(assignments, employees)
     validation_errors = []
     results = []
@@ -2926,6 +3175,10 @@ def _payroll_calculation(payload: PayrollGenerateRequest, actor: str):
         paid_days = min(float(divisor), present_days + paid_leave_days)
         daily_rate = monthly_gross / float(divisor or total_days)
         prorated_gross = round(monthly_gross * (paid_days / float(divisor or total_days)), 2)
+        net_before_statutory = round(prorated_gross + additions - deductions, 2)
+        statutory = _calculate_statutory_lines(employee_code, prorated_gross, salary_data, net_before_statutory, statutory_rules)
+        statutory_deductions = statutory["employee_deductions"]
+        deductions = round(deductions + statutory_deductions, 2)
         net_pay = round(prorated_gross + additions - deductions, 2)
         result_id = _new_ref("PER")
         result = {
@@ -2941,12 +3194,15 @@ def _payroll_calculation(payload: PayrollGenerateRequest, actor: str):
             "net_pay": f"{net_pay:.2f}",
             "validation_status": "Valid",
             "status": "Draft",
+            "statutory_deductions": f"{statutory_deductions:.2f}",
+            "employer_contributions": f"{statutory['employer_contributions']:.2f}",
             "lines": [
                 {"component_name": "Prorated Gross", "component_type": "Earning", "quantity": f"{paid_days:.2f}", "rate": f"{daily_rate:.2f}", "amount": f"{prorated_gross:.2f}", "formula": f"monthly_gross * paid_days / {divisor_source}:{divisor}", "source": "salary_assignment"},
                 *[
                     {"component_name": line.get("adjustment_type", "Adjustment"), "component_type": line.get("addition_or_deduction", "Addition"), "quantity": line.get("quantity", "1"), "rate": line.get("rate", line.get("amount", "0")), "amount": line.get("amount", "0"), "formula": line.get("calculation_method", "manual"), "source": "payroll_adjustments"}
                     for line in adjustment_lines
                 ],
+                *statutory["lines"],
             ],
         }
         totals["gross_pay"] += prorated_gross
@@ -2955,7 +3211,7 @@ def _payroll_calculation(payload: PayrollGenerateRequest, actor: str):
         totals["employees"] += 1
         results.append(result)
         if not payload.dry_run:
-            storage.create_record("payroll_employee_results", {key: value for key, value in result.items() if key != "lines"})
+            storage.create_record("payroll_employee_results", {key: value for key, value in result.items() if key not in {"lines", "statutory_deductions", "employer_contributions"}})
             for line in result["lines"]:
                 storage.create_record("payroll_calculation_lines", {
                     "line_id": _new_ref("LINE"),
@@ -3006,6 +3262,7 @@ def _payroll_calculation(payload: PayrollGenerateRequest, actor: str):
             "proration_method": payroll_policy.get("data", {}).get("proration_method", "Calendar Day"),
             "divisor": divisor,
             "divisor_source": divisor_source,
+            "statutory_rules": len(statutory_rules),
         },
     }
 
@@ -4071,6 +4328,21 @@ def v1_finance_settings_dashboard(email: str = Depends(_verify)):
 def v1_finance_save_payroll_policy(payload: PayrollPolicyRequest, email: str = Depends(_verify)):
     _require_permission(email, "finance:write")
     return _save_payroll_policy(payload, email)
+
+@app.get("/api/v1/finance/statutory-dashboard")
+def v1_finance_statutory_dashboard(email: str = Depends(_verify)):
+    _require_permission(email, "finance:read")
+    return _statutory_dashboard()
+
+@app.post("/api/v1/finance/statutory-rules")
+def v1_finance_save_statutory_rule(payload: PayrollStatutoryRuleRequest, email: str = Depends(_verify)):
+    _require_permission(email, "finance:write")
+    return _save_statutory_rule(payload, email)
+
+@app.post("/api/v1/finance/statutory-rules/decision")
+def v1_finance_decide_statutory_rule(payload: PayrollStatutoryRuleDecisionRequest, email: str = Depends(_verify)):
+    _require_permission(email, "finance:write")
+    return _decide_statutory_rule(payload, email)
 
 @app.get("/api/v1/finance/adjustments-dashboard")
 def v1_finance_adjustments_dashboard(email: str = Depends(_verify)):

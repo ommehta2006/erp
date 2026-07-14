@@ -141,6 +141,7 @@ EXPERT_HR_MODULES = {
     "salary_revision_history": ["revision_id", "employee_code", "structure_id", "effective_date", "basic_salary", "allowances", "deductions", "gross_salary", "ctc", "net_salary_estimate", "revision_type", "previous_salary", "new_salary", "increase_amount", "increase_percent", "reason", "supporting_document", "requested_by", "approved_by", "approval_status", "created_time", "status"],
     "payroll_periods": ["period_id", "period_name", "start_date", "end_date", "company", "branch", "attendance_close_status", "payroll_status", "status"],
     "payroll_policies": ["policy_id", "policy_name", "proration_method", "fixed_divisor", "rounding_rule", "max_adjustment_amount", "role_adjustment_limits", "retroactive_months_allowed", "approval_required", "lock_after_approval", "allow_reversal_after_lock", "adjustment_categories", "statutory_notes", "effective_start_date", "effective_end_date", "created_by", "updated_by", "approval_status", "status"],
+    "payroll_statutory_rules": ["rule_id", "rule_name", "component_name", "deduction_type", "calculation_base", "rate_percent", "fixed_amount", "monthly_cap", "annual_exemption", "employee_min_gross", "employee_max_gross", "slab_config", "jurisdiction", "employer_contribution", "employee_contribution", "effective_start_date", "effective_end_date", "created_by", "approved_by", "approval_status", "status"],
     "payroll_employee_results": ["result_id", "payroll_run", "employee_code", "paid_days", "present_days", "paid_leave_days", "unpaid_leave_days", "gross_pay", "deductions", "net_pay", "validation_status", "status"],
     "payroll_calculation_lines": ["line_id", "result_id", "component_name", "component_type", "quantity", "rate", "amount", "formula", "source", "status"],
     "payroll_adjustments": ["adjustment_id", "employee_code", "payroll_month", "adjustment_type", "addition_or_deduction", "amount", "calculation_method", "quantity", "rate", "reason", "policy_reference", "supporting_attachment", "requested_by", "approval_status", "approved_by", "rejected_by", "approval_remarks", "payroll_inclusion_status", "limit_check", "duplicate_key", "reversal_of", "created_time", "updated_time", "status"],
@@ -165,7 +166,7 @@ DEPARTMENTS["hr"]["modules"] = [
 ]
 DEPARTMENTS["finance"]["modules"] = [
     "payroll_periods", "payroll_policies", "payroll_runs", "payroll_employee_results", "payroll_calculation_lines", "payroll_adjustments",
-    "payroll_approvals", "payment_batches", "salary_structures", "salary_structure_components", "salary_slips",
+    "payroll_approvals", "payroll_statutory_rules", "payment_batches", "salary_structures", "salary_structure_components", "salary_slips",
     "invoices", "purchase_orders", "sales_orders", "budgets", "tax_records", "farmer_payments", "expense_claims", "approvals",
 ]
 DEPARTMENTS["admin"]["modules"] = [
