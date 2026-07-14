@@ -21,6 +21,8 @@ type AttendanceRecord = {
   approval_status: string;
   geofence_status: string;
   biometric_status: string;
+  risk_score: number;
+  risk_flags: string;
   missing_day_out: boolean;
   evidence: { location_events: number; biometric_events: number; approvals: number };
 };
@@ -48,6 +50,8 @@ type AttendanceDashboard = {
   correction_requests: CorrectionRequest[];
   pending_corrections: CorrectionRequest[];
   failed_biometrics: { id: string; data: Record<string, string>; status: string }[];
+  high_risk_attendance: AttendanceRecord[];
+  high_risk_devices: { id: string; data: Record<string, string>; status: string }[];
 };
 
 async function requestAttendanceDashboard(token: string) {
@@ -62,6 +66,12 @@ function tone(status: string) {
   if (["Approved", "Present", "Attendance Corrected", "Passed"].includes(status)) return "bg-emerald-100 text-emerald-800";
   if (["Rejected", "Failed", "Outside Fence", "Accuracy Rejected", "Out of Fence"].includes(status)) return "bg-rose-100 text-rose-800";
   return "bg-amber-100 text-amber-800";
+}
+
+function riskTone(score: number) {
+  if (score >= 60) return "bg-rose-100 text-rose-800";
+  if (score >= 25) return "bg-amber-100 text-amber-800";
+  return "bg-emerald-100 text-emerald-800";
 }
 
 function minutes(value: string) {
@@ -158,6 +168,7 @@ export default function HrAttendancePage() {
     ["Missing Day Out", dashboard?.stats.missing_day_out || 0],
     ["Corrections", dashboard?.stats.correction_requests || 0],
     ["Failed Biometrics", dashboard?.stats.failed_biometrics || 0],
+    ["High Risk", dashboard?.stats.high_risk_attendance || 0],
   ];
 
   return (
@@ -190,7 +201,7 @@ export default function HrAttendancePage() {
             </div>
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search attendance" className="h-11 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-teal-700 lg:w-80" />
           </div>
-          <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
+          <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-7">
             {stats.map(([label, value]) => (
               <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <div className="text-xs font-medium text-slate-500">{label}</div>
@@ -209,11 +220,11 @@ export default function HrAttendancePage() {
             <div className="overflow-auto">
               <table className="w-full min-w-[980px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                  <tr><th className="p-3">Employee</th><th className="p-3">Date</th><th className="p-3">Time</th><th className="p-3">Hours</th><th className="p-3">Fence</th><th className="p-3">Biometric</th><th className="p-3">Approval</th><th className="p-3">Evidence</th><th className="p-3">Action</th></tr>
+                  <tr><th className="p-3">Employee</th><th className="p-3">Date</th><th className="p-3">Time</th><th className="p-3">Hours</th><th className="p-3">Fence</th><th className="p-3">Risk</th><th className="p-3">Biometric</th><th className="p-3">Approval</th><th className="p-3">Evidence</th><th className="p-3">Action</th></tr>
                 </thead>
                 <tbody>
                   {records.length === 0 ? (
-                    <tr><td className="p-6 text-slate-500" colSpan={9}>No attendance records yet.</td></tr>
+                    <tr><td className="p-6 text-slate-500" colSpan={10}>No attendance records yet.</td></tr>
                   ) : records.map((row) => (
                     <tr key={row.attendance_record_id || row.id} className="border-t border-slate-100">
                       <td className="p-3"><div className="font-medium">{row.employee_name}</div><div className="text-xs text-slate-500">{row.employee_code}</div></td>
@@ -221,6 +232,10 @@ export default function HrAttendancePage() {
                       <td className="p-3">{row.day_in_time || "-"} to {row.day_out_time || "-"}</td>
                       <td className="p-3">{minutes(row.gross_work_minutes)}</td>
                       <td className="p-3"><span className={`rounded-lg px-2 py-1 text-xs font-semibold ${tone(row.geofence_status)}`}>{row.geofence_status}</span></td>
+                      <td className="p-3">
+                        <span className={`rounded-lg px-2 py-1 text-xs font-semibold ${riskTone(row.risk_score || 0)}`}>{row.risk_score || 0}</span>
+                        <div className="mt-1 max-w-32 truncate text-xs text-slate-500">{row.risk_flags || "none"}</div>
+                      </td>
                       <td className="p-3"><span className={`rounded-lg px-2 py-1 text-xs font-semibold ${tone(row.biometric_status)}`}>{row.biometric_status}</span></td>
                       <td className="p-3"><span className={`rounded-lg px-2 py-1 text-xs font-semibold ${tone(row.approval_status)}`}>{row.approval_status}</span></td>
                       <td className="p-3 text-xs text-slate-600">{row.evidence.location_events} loc / {row.evidence.biometric_events} bio / {row.evidence.approvals} approvals</td>
@@ -261,6 +276,8 @@ export default function HrAttendancePage() {
 
             <Panel title="Exception Queues">
               <Queue label="Out of fence" value={dashboard?.out_of_fence.length || 0} />
+              <Queue label="High risk attendance" value={dashboard?.high_risk_attendance.length || 0} />
+              <Queue label="High risk devices" value={dashboard?.high_risk_devices.length || 0} />
               <Queue label="Missing day out" value={dashboard?.missing_day_out.length || 0} />
               <Queue label="Failed biometrics" value={dashboard?.failed_biometrics.length || 0} />
               <Queue label="Pending corrections" value={dashboard?.pending_corrections.length || 0} />

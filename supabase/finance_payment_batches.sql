@@ -1,5 +1,9 @@
 -- FactoryPulse Finance Payroll Payment Batches
--- Run in Supabase SQL Editor before using /finance/payments if payment_batches is missing.
+-- Run once in Supabase SQL Editor before using /finance/payments.
+-- This file is self-contained: it creates payroll_runs and salary_slips first
+-- because payment batches and finance dashboards depend on those relations.
+
+create extension if not exists pgcrypto;
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -53,6 +57,17 @@ create table if not exists public.salary_slips (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.salary_slips
+  add column if not exists employee_code text,
+  add column if not exists period text,
+  add column if not exists gross_pay text,
+  add column if not exists deductions text,
+  add column if not exists net_pay text,
+  add column if not exists payment_date text,
+  add column if not exists status text not null default 'Draft',
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now();
 
 create index if not exists idx_payment_batches_payroll_run
   on public.payment_batches(payroll_run);

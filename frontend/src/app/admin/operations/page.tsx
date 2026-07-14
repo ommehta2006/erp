@@ -24,6 +24,8 @@ type OperationsDashboard = {
   attendance_exceptions: {
     missing_day_out: AttendanceRecord[];
     out_of_fence: AttendanceRecord[];
+    high_risk_attendance: AttendanceRecord[];
+    high_risk_devices: ErpRecord[];
     pending_corrections: Record<string, unknown>[];
   };
 };
@@ -98,6 +100,7 @@ export default function AdminOperationsPage() {
     ["Open Notifications", dashboard?.stats.notifications_open || 0],
     ["Missing Day Out", dashboard?.stats.missing_day_out || 0],
     ["Pending Attendance", dashboard?.stats.pending_attendance || 0],
+    ["High Risk", dashboard?.stats.high_risk_attendance || 0],
   ];
 
   return (
@@ -126,7 +129,7 @@ export default function AdminOperationsPage() {
             <h2 className="mt-2 text-3xl font-semibold">Factory job control</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Dry-run a job before executing it. Completed jobs create automation records and audit history, and employee-impacting jobs create notifications.</p>
           </div>
-          <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
+          <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-7">
             {stats.map(([label, value]) => (
               <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <div className="text-xs font-medium text-slate-500">{label}</div>
@@ -168,6 +171,8 @@ export default function AdminOperationsPage() {
             ) : null}
             <Queue title="Missing Day Out" rows={dashboard?.attendance_exceptions.missing_day_out || []} />
             <Queue title="Out Of Fence" rows={dashboard?.attendance_exceptions.out_of_fence || []} />
+            <Queue title="High Risk Attendance" rows={dashboard?.attendance_exceptions.high_risk_attendance || []} />
+            <DeviceQueue rows={dashboard?.attendance_exceptions.high_risk_devices || []} />
             <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
               <h2 className="font-semibold">Recent Jobs</h2>
               <div className="mt-3 space-y-2">
@@ -186,6 +191,25 @@ export default function AdminOperationsPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+function DeviceQueue({ rows }: { rows: ErpRecord[] }) {
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold">High Risk Devices</h2>
+        <span className="text-sm text-slate-500">{rows.length}</span>
+      </div>
+      <div className="mt-3 space-y-2">
+        {rows.length === 0 ? <p className="text-sm text-slate-500">No device risk events.</p> : rows.slice(0, 6).map((row) => (
+          <div key={row.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+            <div className="text-sm font-semibold">{row.data.employee_code || "Employee"}</div>
+            <div className="mt-1 text-xs text-slate-500">Risk {row.data.risk_score || 0} / {row.data.risk_flags || "none"}</div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

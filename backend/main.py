@@ -836,6 +836,64 @@ def _geofence_for_location(location_id: str):
     geofences = _records_by_field("geofences", "location_id", location_id)
     return _active_record(geofences)
 
+def _device_registered_for_employee(employee_code: str, device_id: str | None):
+    if not device_id:
+        return True
+    for item in _records_for_employee("device_registrations", employee_code, 100):
+        data = item.get("data", {})
+        if data.get("device_id") == device_id and (data.get("approval_status") or item.get("status")) == "Approved":
+            return True
+    return False
+
+def _previous_location_event(employee_code: str, device_id: str | None = None):
+    rows = _records_for_employee("attendance_location_events", employee_code, 100)
+    if device_id:
+        rows = [item for item in rows if item.get("data", {}).get("device_id") == device_id]
+    return rows[0] if rows else None
+
+def _location_risk_signals(employee_code: str, payload: LocationValidationRequest):
+    flags: list[str] = []
+    score = 0
+    now = datetime.now(timezone.utc)
+    if payload.mock_location_indicator and payload.mock_location_indicator.lower() not in {"no", "false", "none", "unknown"}:
+        flags.append("mock_location_indicator")
+        score += 35
+    if payload.accuracy <= 1:
+        flags.append("suspiciously_perfect_accuracy")
+        score += 10
+    captured_at = payload.captured_at or payload.device_time
+    if captured_at:
+        captured = _parse_utc_iso(captured_at)
+        age_seconds = abs((now - captured).total_seconds())
+        if age_seconds > int(os.getenv("MAX_LOCATION_AGE_SECONDS", "300")):
+            flags.append("stale_location")
+            score += 25
+    if payload.device_time:
+        device_time = _parse_utc_iso(payload.device_time)
+        drift_seconds = abs((now - device_time).total_seconds())
+        if drift_seconds > int(os.getenv("MAX_DEVICE_TIME_DRIFT_SECONDS", "300")):
+            flags.append("device_time_drift")
+            score += 20
+    if payload.device_id and not _device_registered_for_employee(employee_code, payload.device_id):
+        flags.append("unapproved_device")
+        score += 25
+    previous = _previous_location_event(employee_code, payload.device_id)
+    if previous:
+        data = previous.get("data", {})
+        previous_lat = _money(data.get("latitude"))
+        previous_lon = _money(data.get("longitude"))
+        distance = _haversine_meters(previous_lat, previous_lon, payload.latitude, payload.longitude)
+        if distance < 0.5 and payload.accuracy <= 5:
+            flags.append("repeated_identical_coordinate")
+            score += 10
+        previous_time = _parse_utc_iso(data.get("server_time") or data.get("received_at") or "")
+        elapsed = max((now - previous_time).total_seconds(), 1)
+        speed_mps = distance / elapsed
+        if speed_mps > 80:
+            flags.append("impossible_travel")
+            score += 35
+    return {"flags": flags, "score": min(score, 100)}
+
 def _geofence_validation(employee_code: str, payload: LocationValidationRequest):
     assignment, location = _employee_work_location(employee_code)
     location_data = location.get("data", {}) if location else {}
@@ -844,6 +902,8 @@ def _geofence_validation(employee_code: str, payload: LocationValidationRequest)
     geofence_data = geofence.get("data", {}) if geofence else {}
     allowed_accuracy = _float_value(geofence_data, "allowed_accuracy_meters") or _float_value(location_data, "allowed_gps_accuracy_meters", 50)
     risk_flags = []
+    fraud_risk = _location_risk_signals(employee_code, payload)
+    risk_flags.extend(fraud_risk["flags"])
 
     if payload.accuracy > allowed_accuracy:
         risk_flags.append("poor_accuracy")
@@ -879,6 +939,12 @@ def _geofence_validation(employee_code: str, payload: LocationValidationRequest)
             risk_flags.append("outside_fence")
 
     radius = _float_value(geofence_data, "radius_meters") or _float_value(location_data, "geofence_radius_meters", 0)
+    risk_score = min(
+        fraud_risk["score"]
+        + (25 if "outside_fence" in risk_flags else 0)
+        + (20 if "poor_accuracy" in risk_flags else 0),
+        100,
+    )
     result = {
         "employee_code": employee_code,
         "event_type": payload.event_type,
@@ -898,8 +964,9 @@ def _geofence_validation(employee_code: str, payload: LocationValidationRequest)
         "geofence_status": geofence_status,
         "validation_reason": validation_reason,
         "risk_flags": ",".join(risk_flags) if risk_flags else "none",
+        "risk_score": str(risk_score),
         "server_validated_at": _now_iso(),
-        "can_continue": bool(inside and payload.accuracy <= allowed_accuracy),
+        "can_continue": bool(inside and payload.accuracy <= allowed_accuracy and fraud_risk["score"] < 60),
     }
     return result
 
@@ -1802,6 +1869,9 @@ def _attendance_row_summary(item: dict[str, Any]):
         geofence_status = day_out_fence or day_in_fence or "Location Not Verified"
     missing_day_out = bool(data.get("day_in_time") and not data.get("day_out_time"))
     latest_biometric = biometric_events[0].get("data", {}) if biometric_events else {}
+    latest_location = location_events[0].get("data", {}) if location_events else {}
+    risk_score = _money(latest_location.get("risk_score"), 0)
+    risk_flags = latest_location.get("risk_flags", "none")
     return {
         "id": item.get("id"),
         "attendance_record_id": record_id,
@@ -1820,12 +1890,14 @@ def _attendance_row_summary(item: dict[str, Any]):
         "approval_status": data.get("approval_status") or item.get("status") or "Open",
         "geofence_status": geofence_status,
         "biometric_status": latest_biometric.get("verification_result") or data.get("day_in_biometric_result") or "Pending",
+        "risk_score": round(risk_score, 2),
+        "risk_flags": risk_flags,
         "missing_day_out": missing_day_out,
         "evidence": {
             "location_events": len(location_events),
             "biometric_events": len(biometric_events),
             "approvals": len(approvals),
-            "latest_location": location_events[0].get("data", {}) if location_events else None,
+            "latest_location": latest_location or None,
             "latest_biometric": latest_biometric or None,
         },
         "raw": data,
@@ -1842,6 +1914,9 @@ def _attendance_dashboard():
     ]
     missing_day_out = [item for item in records if item["missing_day_out"]]
     pending_records = [item for item in records if item["approval_status"] in {"Open", "Pending", "Pending Approval", "Draft"}]
+    high_risk_records = [item for item in records if _money(item.get("risk_score")) >= 60]
+    device_events = _items("device_integrity_events", 1000)
+    high_risk_devices = [item for item in device_events if _money(item.get("data", {}).get("risk_score")) >= 60 or item.get("status") == "Failed"]
     pending_corrections = [
         item for item in correction_requests
         if item.get("status") in {"Open", "Pending", "Pending Approval", "Draft"}
@@ -1860,6 +1935,9 @@ def _attendance_dashboard():
             "correction_requests": len(correction_requests),
             "pending_corrections": len(pending_corrections),
             "failed_biometrics": len(failed_biometrics),
+            "high_risk_attendance": len(high_risk_records),
+            "device_risk_events": len(device_events),
+            "high_risk_devices": len(high_risk_devices),
             "validation_results": len(validation_results),
             "approvals": len(approvals),
         },
@@ -1870,6 +1948,9 @@ def _attendance_dashboard():
         "pending_corrections": pending_corrections[:100],
         "validation_results": validation_results[:100],
         "failed_biometrics": failed_biometrics[:100],
+        "high_risk_attendance": high_risk_records[:100],
+        "device_integrity_events": device_events[:100],
+        "high_risk_devices": high_risk_devices[:100],
     }
 
 def _attendance_csv(rows: list[dict[str, Any]]):
@@ -2282,6 +2363,8 @@ def _operations_dashboard():
             "notifications_open": _status_count(notifications, "Open"),
             "missing_day_out": attendance["stats"]["missing_day_out"],
             "pending_attendance": attendance["stats"]["pending_records"],
+            "high_risk_attendance": attendance["stats"]["high_risk_attendance"],
+            "high_risk_devices": attendance["stats"]["high_risk_devices"],
         },
         "jobs": jobs[:100],
         "available_jobs": [
@@ -2294,6 +2377,8 @@ def _operations_dashboard():
             "missing_day_out": attendance["missing_day_out"][:50],
             "out_of_fence": attendance["out_of_fence"][:50],
             "pending_corrections": attendance["pending_corrections"][:50],
+            "high_risk_attendance": attendance["high_risk_attendance"][:50],
+            "high_risk_devices": attendance["high_risk_devices"][:50],
         },
     }
 
@@ -3680,7 +3765,7 @@ def _persist_location_validation(employee_code: str, payload: LocationValidation
         "inside_fence": validation["inside_fence"],
         "tolerance_applied": "No",
         "mock_location_indicator": payload.mock_location_indicator or "Unknown",
-        "risk_score": "0" if validation["risk_flags"] == "none" else "70",
+        "risk_score": validation.get("risk_score", "0"),
         "validation_result": validation["geofence_status"],
         "failure_reason": "" if validation["can_continue"] else validation["validation_reason"],
         "device_id": payload.device_id or "",
@@ -3688,6 +3773,17 @@ def _persist_location_validation(employee_code: str, payload: LocationValidation
         "app_version": payload.app_version or "",
         "status": "Passed" if validation["can_continue"] else "Failed",
     })
+    if payload.device_id or validation.get("risk_flags", "none") != "none":
+        storage.create_record("device_integrity_events", {
+            "event_id": _new_ref("DEV-RISK"),
+            "employee_code": employee_code,
+            "device_id": payload.device_id or "",
+            "signal_type": payload.event_type,
+            "risk_score": validation.get("risk_score", "0"),
+            "risk_flags": validation.get("risk_flags", "none"),
+            "observed_at": _now_iso(),
+            "status": "Failed" if _money(validation.get("risk_score")) >= 60 else "Passed",
+        })
     validation_id = _new_ref("VAL")
     storage.create_record("attendance_validation_results", {
         "validation_id": validation_id,
