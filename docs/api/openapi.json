@@ -2344,6 +2344,320 @@
         }
       }
     },
+    "/api/v1/finance/salary-dashboard": {
+      "get": {
+        "summary": "V1 Finance Salary Dashboard",
+        "operationId": "v1_finance_salary_dashboard_api_v1_finance_salary_dashboard_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/finance/salary-structures": {
+      "post": {
+        "summary": "V1 Finance Salary Structure",
+        "operationId": "v1_finance_salary_structure_api_v1_finance_salary_structures_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SalaryStructureRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/finance/salary-components": {
+      "post": {
+        "summary": "V1 Finance Salary Component",
+        "operationId": "v1_finance_salary_component_api_v1_finance_salary_components_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SalaryComponentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/finance/salary-assignments": {
+      "post": {
+        "summary": "V1 Finance Salary Assignment",
+        "operationId": "v1_finance_salary_assignment_api_v1_finance_salary_assignments_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SalaryAssignmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/finance/salary-revisions": {
+      "post": {
+        "summary": "V1 Finance Salary Revision",
+        "operationId": "v1_finance_salary_revision_api_v1_finance_salary_revisions_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SalaryRevisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/finance/salary-revisions/decision": {
+      "post": {
+        "summary": "V1 Finance Salary Revision Decision",
+        "operationId": "v1_finance_salary_revision_decision_api_v1_finance_salary_revisions_decision_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SalaryRevisionDecisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/finance/payroll-dashboard": {
       "get": {
         "summary": "V1 Finance Payroll Dashboard",
@@ -5822,6 +6136,295 @@
           "data"
         ],
         "title": "RecordCreate"
+      },
+      "SalaryAssignmentRequest": {
+        "properties": {
+          "employee_code": {
+            "type": "string",
+            "title": "Employee Code"
+          },
+          "structure_id": {
+            "type": "string",
+            "title": "Structure Id"
+          },
+          "effective_date": {
+            "type": "string",
+            "title": "Effective Date"
+          },
+          "basic_salary": {
+            "type": "number",
+            "title": "Basic Salary",
+            "default": 0
+          },
+          "allowances": {
+            "type": "number",
+            "title": "Allowances",
+            "default": 0
+          },
+          "deductions": {
+            "type": "number",
+            "title": "Deductions",
+            "default": 0
+          },
+          "employer_contributions": {
+            "type": "number",
+            "title": "Employer Contributions",
+            "default": 0
+          },
+          "employee_contributions": {
+            "type": "number",
+            "title": "Employee Contributions",
+            "default": 0
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "default": "INR"
+          },
+          "payment_frequency": {
+            "type": "string",
+            "title": "Payment Frequency",
+            "default": "Monthly"
+          },
+          "approval_status": {
+            "type": "string",
+            "title": "Approval Status",
+            "default": "Approved"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "Active"
+          }
+        },
+        "type": "object",
+        "required": [
+          "employee_code",
+          "structure_id",
+          "effective_date"
+        ],
+        "title": "SalaryAssignmentRequest"
+      },
+      "SalaryComponentRequest": {
+        "properties": {
+          "structure_id": {
+            "type": "string",
+            "title": "Structure Id"
+          },
+          "component_name": {
+            "type": "string",
+            "title": "Component Name"
+          },
+          "component_type": {
+            "type": "string",
+            "title": "Component Type",
+            "default": "Earning"
+          },
+          "calculation_method": {
+            "type": "string",
+            "title": "Calculation Method",
+            "default": "Fixed"
+          },
+          "amount": {
+            "type": "number",
+            "title": "Amount",
+            "default": 0
+          },
+          "percentage_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percentage Of"
+          },
+          "taxable": {
+            "type": "boolean",
+            "title": "Taxable",
+            "default": true
+          },
+          "payroll_impact": {
+            "type": "string",
+            "title": "Payroll Impact",
+            "default": "Gross"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "Active"
+          }
+        },
+        "type": "object",
+        "required": [
+          "structure_id",
+          "component_name"
+        ],
+        "title": "SalaryComponentRequest"
+      },
+      "SalaryRevisionDecisionRequest": {
+        "properties": {
+          "revision_id": {
+            "type": "string",
+            "title": "Revision Id"
+          },
+          "decision": {
+            "type": "string",
+            "title": "Decision"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision_id",
+          "decision"
+        ],
+        "title": "SalaryRevisionDecisionRequest"
+      },
+      "SalaryRevisionRequest": {
+        "properties": {
+          "employee_code": {
+            "type": "string",
+            "title": "Employee Code"
+          },
+          "structure_id": {
+            "type": "string",
+            "title": "Structure Id"
+          },
+          "effective_date": {
+            "type": "string",
+            "title": "Effective Date"
+          },
+          "basic_salary": {
+            "type": "number",
+            "title": "Basic Salary",
+            "default": 0
+          },
+          "allowances": {
+            "type": "number",
+            "title": "Allowances",
+            "default": 0
+          },
+          "deductions": {
+            "type": "number",
+            "title": "Deductions",
+            "default": 0
+          },
+          "revision_type": {
+            "type": "string",
+            "title": "Revision Type",
+            "default": "Salary Revision"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "supporting_document": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supporting Document"
+          }
+        },
+        "type": "object",
+        "required": [
+          "employee_code",
+          "structure_id",
+          "effective_date",
+          "reason"
+        ],
+        "title": "SalaryRevisionRequest"
+      },
+      "SalaryStructureRequest": {
+        "properties": {
+          "structure_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Structure Id"
+          },
+          "structure_name": {
+            "type": "string",
+            "title": "Structure Name"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "default": "INR"
+          },
+          "payment_frequency": {
+            "type": "string",
+            "title": "Payment Frequency",
+            "default": "Monthly"
+          },
+          "proration_method": {
+            "type": "string",
+            "title": "Proration Method",
+            "default": "Payroll Policy"
+          },
+          "basic_salary": {
+            "type": "number",
+            "title": "Basic Salary",
+            "default": 0
+          },
+          "allowances": {
+            "type": "number",
+            "title": "Allowances",
+            "default": 0
+          },
+          "deductions": {
+            "type": "number",
+            "title": "Deductions",
+            "default": 0
+          },
+          "employer_contributions": {
+            "type": "number",
+            "title": "Employer Contributions",
+            "default": 0
+          },
+          "employee_contributions": {
+            "type": "number",
+            "title": "Employee Contributions",
+            "default": 0
+          },
+          "approval_status": {
+            "type": "string",
+            "title": "Approval Status",
+            "default": "Approved"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "Active"
+          }
+        },
+        "type": "object",
+        "required": [
+          "structure_name"
+        ],
+        "title": "SalaryStructureRequest"
       },
       "ValidationError": {
         "properties": {

@@ -325,6 +325,61 @@ class PayrollPolicyRequest(BaseModel):
     approval_status: str = "Approved"
     status: str = "Active"
 
+class SalaryStructureRequest(BaseModel):
+    structure_id: str | None = None
+    structure_name: str
+    currency: str = "INR"
+    payment_frequency: str = "Monthly"
+    proration_method: str = "Payroll Policy"
+    basic_salary: float = 0
+    allowances: float = 0
+    deductions: float = 0
+    employer_contributions: float = 0
+    employee_contributions: float = 0
+    approval_status: str = "Approved"
+    status: str = "Active"
+
+class SalaryComponentRequest(BaseModel):
+    structure_id: str
+    component_name: str
+    component_type: str = "Earning"
+    calculation_method: str = "Fixed"
+    amount: float = 0
+    percentage_of: str | None = None
+    taxable: bool = True
+    payroll_impact: str = "Gross"
+    status: str = "Active"
+
+class SalaryAssignmentRequest(BaseModel):
+    employee_code: str
+    structure_id: str
+    effective_date: str
+    basic_salary: float = 0
+    allowances: float = 0
+    deductions: float = 0
+    employer_contributions: float = 0
+    employee_contributions: float = 0
+    currency: str = "INR"
+    payment_frequency: str = "Monthly"
+    approval_status: str = "Approved"
+    status: str = "Active"
+
+class SalaryRevisionRequest(BaseModel):
+    employee_code: str
+    structure_id: str
+    effective_date: str
+    basic_salary: float = 0
+    allowances: float = 0
+    deductions: float = 0
+    revision_type: str = "Salary Revision"
+    reason: str
+    supporting_document: str | None = None
+
+class SalaryRevisionDecisionRequest(BaseModel):
+    revision_id: str
+    decision: str
+    remarks: str | None = None
+
 class AdminUserCreateRequest(BaseModel):
     email: str
     password: str
@@ -1916,6 +1971,218 @@ def _payroll_employee_codes(assignments: list[dict[str, Any]], employees: list[d
 def _salary_assignment_for(employee_code: str):
     assignments = _records_for_employee("employee_salary_assignments", employee_code, 100)
     return _active_record(assignments)
+
+def _salary_totals(basic_salary: float, allowances: float, deductions: float, employer_contributions: float = 0, employee_contributions: float = 0):
+    basic = max(float(basic_salary or 0), 0)
+    allow = max(float(allowances or 0), 0)
+    deduct = max(float(deductions or 0), 0)
+    employer = max(float(employer_contributions or 0), 0)
+    employee = max(float(employee_contributions or 0), 0)
+    gross = round(basic + allow, 2)
+    ctc = round(gross + employer, 2)
+    net = round(gross - deduct - employee, 2)
+    return {
+        "basic_salary": basic,
+        "allowances": allow,
+        "deductions": deduct,
+        "employer_contributions": employer,
+        "employee_contributions": employee,
+        "gross_salary": gross,
+        "ctc": ctc,
+        "net_salary_estimate": net,
+    }
+
+def _fmt_money(value: float):
+    return f"{float(value or 0):.2f}"
+
+def _find_salary_revision(revision_id: str):
+    normalized = revision_id.strip().lower()
+    for item in _items("salary_revision_history", 1000):
+        data = item.get("data", {})
+        if item.get("id", "").lower() == normalized or data.get("revision_id", "").strip().lower() == normalized:
+            return item
+    return None
+
+def _salary_dashboard():
+    structures = _items("salary_structures", 250)
+    components = _items("salary_structure_components", 500)
+    assignments = _items("employee_salary_assignments", 1000)
+    revisions = _items("salary_revision_history", 1000)
+    pending_revisions = [
+        item for item in revisions
+        if (item.get("data", {}).get("approval_status") or item.get("status")) in {"Pending Approval", "Pending", "Draft", "Open"}
+    ]
+    approved_revisions = [
+        item for item in revisions
+        if (item.get("data", {}).get("approval_status") or item.get("status")) == "Approved"
+    ]
+    current_ctc = sum(_money(item.get("data", {}).get("ctc")) for item in assignments if (item.get("data", {}).get("status") or item.get("status")) == "Active")
+    return {
+        "stats": {
+            "structures": len(structures),
+            "components": len(components),
+            "assignments": len(assignments),
+            "active_assignments": len([item for item in assignments if (item.get("data", {}).get("status") or item.get("status")) == "Active"]),
+            "pending_revisions": len(pending_revisions),
+            "approved_revisions": len(approved_revisions),
+            "current_ctc": round(current_ctc, 2),
+        },
+        "structures": structures[:100],
+        "components": components[:200],
+        "assignments": assignments[:200],
+        "pending_revisions": pending_revisions[:100],
+        "recent_revisions": revisions[:200],
+    }
+
+def _create_salary_structure(payload: SalaryStructureRequest, actor: str):
+    if not payload.structure_name.strip():
+        raise HTTPException(status_code=422, detail="structure_name is required.")
+    totals = _salary_totals(payload.basic_salary, payload.allowances, payload.deductions, payload.employer_contributions, payload.employee_contributions)
+    structure_id = _clean_text(payload.structure_id) or _new_ref("SAL-STRUCT")
+    item = storage.create_record("salary_structures", {
+        "structure_id": structure_id,
+        "structure_name": payload.structure_name.strip(),
+        "currency": payload.currency.strip() or "INR",
+        "payment_frequency": payload.payment_frequency.strip() or "Monthly",
+        "proration_method": payload.proration_method.strip() or "Payroll Policy",
+        "basic_salary": _fmt_money(totals["basic_salary"]),
+        "allowances": _fmt_money(totals["allowances"]),
+        "deductions": _fmt_money(totals["deductions"]),
+        "employer_contributions": _fmt_money(totals["employer_contributions"]),
+        "employee_contributions": _fmt_money(totals["employee_contributions"]),
+        "gross_salary": _fmt_money(totals["gross_salary"]),
+        "ctc": _fmt_money(totals["ctc"]),
+        "net_salary_estimate": _fmt_money(totals["net_salary_estimate"]),
+        "approval_status": payload.approval_status.strip() or "Approved",
+        "status": payload.status.strip() or "Active",
+    })
+    _write_audit(actor, "create_salary_structure", "salary_structures", structure_id, item.get("data", {}), "Salary structure created.")
+    return {"item": item, "dashboard": _salary_dashboard()}
+
+def _create_salary_component(payload: SalaryComponentRequest, actor: str):
+    if not payload.structure_id.strip() or not payload.component_name.strip():
+        raise HTTPException(status_code=422, detail="structure_id and component_name are required.")
+    component_type = payload.component_type.strip()
+    if component_type not in {"Earning", "Deduction", "Employer Contribution", "Employee Contribution"}:
+        raise HTTPException(status_code=422, detail="component_type must be Earning, Deduction, Employer Contribution, or Employee Contribution.")
+    if payload.amount < 0:
+        raise HTTPException(status_code=422, detail="amount cannot be negative.")
+    item = storage.create_record("salary_structure_components", {
+        "component_id": _new_ref("SCOMP"),
+        "structure_id": payload.structure_id.strip(),
+        "component_name": payload.component_name.strip(),
+        "component_type": component_type,
+        "calculation_method": payload.calculation_method.strip() or "Fixed",
+        "amount": _fmt_money(payload.amount),
+        "percentage_of": _clean_text(payload.percentage_of),
+        "taxable": "Yes" if payload.taxable else "No",
+        "payroll_impact": payload.payroll_impact.strip() or "Gross",
+        "status": payload.status.strip() or "Active",
+    })
+    _write_audit(actor, "create_salary_component", "salary_structure_components", item.get("data", {}).get("component_id", item.get("id", "")), item.get("data", {}), "Salary component created.")
+    return {"item": item, "dashboard": _salary_dashboard()}
+
+def _create_salary_assignment(payload: SalaryAssignmentRequest, actor: str, reason: str = "Salary assignment created."):
+    if not payload.employee_code.strip() or not payload.structure_id.strip() or not payload.effective_date.strip():
+        raise HTTPException(status_code=422, detail="employee_code, structure_id, and effective_date are required.")
+    _parse_iso_date(payload.effective_date, "effective_date")
+    totals = _salary_totals(payload.basic_salary, payload.allowances, payload.deductions, payload.employer_contributions, payload.employee_contributions)
+    item = storage.create_record("employee_salary_assignments", {
+        "assignment_id": _new_ref("SAL-ASG"),
+        "employee_code": payload.employee_code.strip(),
+        "structure_id": payload.structure_id.strip(),
+        "effective_date": payload.effective_date.strip(),
+        "basic_salary": _fmt_money(totals["basic_salary"]),
+        "allowances": _fmt_money(totals["allowances"]),
+        "deductions": _fmt_money(totals["deductions"]),
+        "employer_contributions": _fmt_money(totals["employer_contributions"]),
+        "employee_contributions": _fmt_money(totals["employee_contributions"]),
+        "gross_salary": _fmt_money(totals["gross_salary"]),
+        "ctc": _fmt_money(totals["ctc"]),
+        "net_salary_estimate": _fmt_money(totals["net_salary_estimate"]),
+        "currency": payload.currency.strip() or "INR",
+        "payment_frequency": payload.payment_frequency.strip() or "Monthly",
+        "approval_status": payload.approval_status.strip() or "Approved",
+        "status": payload.status.strip() or "Active",
+    })
+    _write_audit(actor, "create_salary_assignment", "employee_salary_assignments", item.get("data", {}).get("assignment_id", item.get("id", "")), item.get("data", {}), reason)
+    _notify_employee(payload.employee_code.strip(), "salary_revision_approved", "Salary assignment updated", f"Effective {payload.effective_date}, gross salary is {totals['gross_salary']:.2f}.", payload.employee_code.strip())
+    return item
+
+def _request_salary_revision(payload: SalaryRevisionRequest, actor: str):
+    if not payload.employee_code.strip() or not payload.structure_id.strip() or not payload.reason.strip():
+        raise HTTPException(status_code=422, detail="employee_code, structure_id, and reason are required.")
+    _parse_iso_date(payload.effective_date, "effective_date")
+    current = _salary_assignment_for(payload.employee_code.strip())
+    current_ctc = _money(current.get("data", {}).get("ctc")) if current else 0
+    totals = _salary_totals(payload.basic_salary, payload.allowances, payload.deductions)
+    increase = round(totals["ctc"] - current_ctc, 2)
+    increase_percent = round((increase / current_ctc) * 100, 2) if current_ctc else 0
+    item = storage.create_record("salary_revision_history", {
+        "revision_id": _new_ref("SAL-REV"),
+        "employee_code": payload.employee_code.strip(),
+        "structure_id": payload.structure_id.strip(),
+        "effective_date": payload.effective_date.strip(),
+        "basic_salary": _fmt_money(totals["basic_salary"]),
+        "allowances": _fmt_money(totals["allowances"]),
+        "deductions": _fmt_money(totals["deductions"]),
+        "gross_salary": _fmt_money(totals["gross_salary"]),
+        "ctc": _fmt_money(totals["ctc"]),
+        "net_salary_estimate": _fmt_money(totals["net_salary_estimate"]),
+        "revision_type": payload.revision_type.strip() or "Salary Revision",
+        "previous_salary": _fmt_money(current_ctc),
+        "new_salary": _fmt_money(totals["ctc"]),
+        "increase_amount": _fmt_money(increase),
+        "increase_percent": f"{increase_percent:.2f}",
+        "reason": payload.reason.strip(),
+        "supporting_document": _clean_text(payload.supporting_document),
+        "requested_by": actor,
+        "approved_by": "",
+        "approval_status": "Pending Approval",
+        "created_time": _now_iso(),
+        "status": "Pending Approval",
+    })
+    _write_audit(actor, "request_salary_revision", "salary_revision_history", item.get("data", {}).get("revision_id", item.get("id", "")), item.get("data", {}), payload.reason)
+    return {"item": item, "dashboard": _salary_dashboard()}
+
+def _decide_salary_revision(payload: SalaryRevisionDecisionRequest, actor: str):
+    item = _find_salary_revision(payload.revision_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Salary revision not found.")
+    data = item.get("data", {})
+    decision = payload.decision.strip().title()
+    if decision not in {"Approved", "Rejected"}:
+        raise HTTPException(status_code=422, detail="decision must be Approved or Rejected.")
+    if (data.get("approval_status") or item.get("status")) not in {"Pending Approval", "Pending", "Draft", "Open"}:
+        raise HTTPException(status_code=409, detail="Salary revision is already decided.")
+    updated = storage.update_record("salary_revision_history", item.get("id", ""), {
+        "approval_status": decision,
+        "approved_by": actor if decision == "Approved" else "",
+        "status": decision,
+    })
+    if decision == "Approved":
+        _create_salary_assignment(SalaryAssignmentRequest(
+            employee_code=data.get("employee_code", ""),
+            structure_id=data.get("structure_id", ""),
+            effective_date=data.get("effective_date", _today()),
+            basic_salary=_money(data.get("basic_salary")),
+            allowances=_money(data.get("allowances")),
+            deductions=_money(data.get("deductions")),
+        ), actor, "Approved salary revision created new effective salary assignment.")
+        _create_lifecycle_event(HrLifecycleEventRequest(
+            employee_code=data.get("employee_code", ""),
+            event_type="Salary Revision",
+            effective_date=data.get("effective_date", _today()),
+            previous_value=data.get("previous_salary", ""),
+            new_value=data.get("new_salary", ""),
+            reason=payload.remarks or data.get("reason", "Salary revision approved"),
+            approved_by=actor,
+            status="Approved",
+        ), actor)
+    else:
+        _notify_employee(data.get("employee_code", ""), "salary_revision_rejected", "Salary revision rejected", payload.remarks or "Salary revision was rejected.", data.get("employee_code", ""))
+    _write_audit(actor, f"{decision.lower()}_salary_revision", "salary_revision_history", data.get("revision_id", item.get("id", "")), updated.get("data", {}), payload.remarks or decision)
+    return {"item": updated, "dashboard": _salary_dashboard()}
 
 PAYROLL_ADJUSTMENT_TYPES = {
     "Additional Salary", "Deduction", "Bonus", "Incentive", "Reimbursement", "Arrear", "Recovery",
@@ -3516,6 +3783,37 @@ def v1_hr_create_location_assignment(payload: HrLocationAssignmentRequest, email
     })
     _write_audit(email, "assign_employee_location", "employee_location_assignments", item.get("id", ""), item.get("data", {}), "HR assigned employee work location.")
     return {"item": item, "dashboard": v1_hr_geofence_dashboard(email)}
+
+@app.get("/api/v1/finance/salary-dashboard")
+def v1_finance_salary_dashboard(email: str = Depends(_verify)):
+    _require_permission(email, "finance:read")
+    return _salary_dashboard()
+
+@app.post("/api/v1/finance/salary-structures")
+def v1_finance_salary_structure(payload: SalaryStructureRequest, email: str = Depends(_verify)):
+    _require_permission(email, "finance:write")
+    return _create_salary_structure(payload, email)
+
+@app.post("/api/v1/finance/salary-components")
+def v1_finance_salary_component(payload: SalaryComponentRequest, email: str = Depends(_verify)):
+    _require_permission(email, "finance:write")
+    return _create_salary_component(payload, email)
+
+@app.post("/api/v1/finance/salary-assignments")
+def v1_finance_salary_assignment(payload: SalaryAssignmentRequest, email: str = Depends(_verify)):
+    _require_permission(email, "finance:write")
+    item = _create_salary_assignment(payload, email)
+    return {"item": item, "dashboard": _salary_dashboard()}
+
+@app.post("/api/v1/finance/salary-revisions")
+def v1_finance_salary_revision(payload: SalaryRevisionRequest, email: str = Depends(_verify)):
+    _require_permission(email, "finance:write")
+    return _request_salary_revision(payload, email)
+
+@app.post("/api/v1/finance/salary-revisions/decision")
+def v1_finance_salary_revision_decision(payload: SalaryRevisionDecisionRequest, email: str = Depends(_verify)):
+    _require_permission(email, "finance:write")
+    return _decide_salary_revision(payload, email)
 
 @app.get("/api/v1/finance/payroll-dashboard")
 def v1_finance_payroll_dashboard(email: str = Depends(_verify)):
