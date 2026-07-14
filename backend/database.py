@@ -149,6 +149,7 @@ EXPERT_HR_MODULES = {
     "payroll_approvals": ["approval_id", "payroll_run", "approver", "decision", "remarks", "decided_at", "status"],
     "payment_batches": ["batch_id", "payroll_run", "payment_date", "payment_method", "total_amount", "bank_file_reference", "payment_status", "status"],
     "notifications": ["notification_id", "recipient_employee_code", "recipient_email", "notification_type", "title", "message", "read_status", "delivery_status", "status"],
+    "announcements": ["announcement_id", "title", "message", "audience", "department", "location_id", "priority", "publish_date", "expiry_date", "published_by", "approval_status", "status"],
     "attachments": ["attachment_id", "entity_type", "entity_id", "file_name", "storage_path", "content_type", "uploaded_by", "status"],
     "audit_logs": ["audit_id", "actor", "action", "entity_type", "entity_id", "previous_values", "new_values", "reason", "ip_address", "device_info", "approval_reference", "status"],
 }
@@ -171,7 +172,7 @@ DEPARTMENTS["finance"]["modules"] = [
     "invoices", "purchase_orders", "sales_orders", "budgets", "tax_records", "farmer_payments", "expense_claims", "approvals",
 ]
 DEPARTMENTS["admin"]["modules"] = [
-    "approvals", "notifications", "attachments", "audit_logs", "documents", "tasks", "support_tickets",
+    "approvals", "announcements", "notifications", "attachments", "audit_logs", "documents", "tasks", "support_tickets",
     "device_registrations", "device_integrity_events", "incidents",
 ]
 
@@ -188,7 +189,7 @@ REQUIRED_FIELDS = {
 }
 
 STATUS_VALUES = {
-    "Open", "Active", "Inactive", "Pending", "Approved", "Rejected", "Completed", "Closed", "On Hold", "Critical",
+    "Open", "Active", "Inactive", "Pending", "Approved", "Rejected", "Completed", "Closed", "On Hold", "Critical", "Published",
     "Draft", "Locked", "Payment Processing", "Partially Paid", "Paid", "Cancelled", "Reversed", "Expired", "Encashed", "Biometric Verified", "Consumed", "Present", "Absent", "Half Day", "Late", "Early Exit",
     "Overtime", "Out of Fence", "Pending Approval", "Attendance Corrected", "Failed", "Passed",
 }

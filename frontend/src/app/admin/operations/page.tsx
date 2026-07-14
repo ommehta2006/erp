@@ -20,6 +20,7 @@ type AttendanceRecord = {
 type OperationsDashboard = {
   stats: Record<string, number>;
   jobs: ErpRecord[];
+  announcements: ErpRecord[];
   available_jobs: JobDefinition[];
   attendance_exceptions: {
     missing_day_out: AttendanceRecord[];
@@ -28,6 +29,17 @@ type OperationsDashboard = {
     high_risk_devices: ErpRecord[];
     pending_corrections: Record<string, unknown>[];
   };
+};
+
+const EMPTY_ANNOUNCEMENT = {
+  title: "",
+  message: "",
+  audience: "All Employees",
+  department: "",
+  location_id: "",
+  priority: "Normal",
+  publish_date: new Date().toISOString().slice(0, 10),
+  expiry_date: "",
 };
 
 async function requestOperationsDashboard(token: string) {
@@ -52,6 +64,7 @@ export default function AdminOperationsPage() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState("");
   const [lastResult, setLastResult] = useState<Record<string, unknown> | null>(null);
+  const [announcement, setAnnouncement] = useState(EMPTY_ANNOUNCEMENT);
 
   const load = () => {
     const token = localStorage.getItem("factorypulse_token");
@@ -93,11 +106,43 @@ export default function AdminOperationsPage() {
     }
   }
 
+  async function publishAnnouncement() {
+    const token = localStorage.getItem("factorypulse_token");
+    if (!token) {
+      router.push("/login");
+      return;
+    }
+    if (!announcement.title.trim() || !announcement.message.trim()) {
+      setError("Announcement title and message are required.");
+      return;
+    }
+    setError("");
+    setNotice("");
+    setBusy("announcement");
+    try {
+      const response = await fetch(`${API_BASE}/api/v1/admin/announcements`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ...announcement, approval_status: "Approved", status: "Published" }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.detail || "Announcement publish failed");
+      setNotice("Announcement published to employee app.");
+      setAnnouncement(EMPTY_ANNOUNCEMENT);
+      setDashboard(body.dashboard || await requestOperationsDashboard(token));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Announcement publish failed");
+    } finally {
+      setBusy("");
+    }
+  }
+
   const stats = [
     ["Jobs", dashboard?.stats.jobs || 0],
     ["Completed", dashboard?.stats.completed_jobs || 0],
     ["Dry Runs", dashboard?.stats.dry_runs || 0],
     ["Open Notifications", dashboard?.stats.notifications_open || 0],
+    ["Circulars", dashboard?.stats.announcements_published || 0],
     ["Missing Day Out", dashboard?.stats.missing_day_out || 0],
     ["Pending Attendance", dashboard?.stats.pending_attendance || 0],
     ["High Risk", dashboard?.stats.high_risk_attendance || 0],
@@ -129,7 +174,7 @@ export default function AdminOperationsPage() {
             <h2 className="mt-2 text-3xl font-semibold">Factory job control</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Dry-run a job before executing it. Completed jobs create automation records and audit history, and employee-impacting jobs create notifications.</p>
           </div>
-          <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-7">
+          <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
             {stats.map(([label, value]) => (
               <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <div className="text-xs font-medium text-slate-500">{label}</div>
@@ -163,6 +208,51 @@ export default function AdminOperationsPage() {
           </section>
 
           <aside className="space-y-4">
+            <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <h2 className="font-semibold">Publish Announcement</h2>
+              <p className="mt-1 text-sm text-slate-500">Approved circulars appear in the employee mobile app.</p>
+              <div className="mt-3 space-y-3">
+                <Input label="Title" value={announcement.title} onChange={(value) => setAnnouncement({ ...announcement, title: value })} />
+                <label className="block">
+                  <span className="text-xs font-medium text-slate-500">Message</span>
+                  <textarea value={announcement.message} onChange={(event) => setAnnouncement({ ...announcement, message: event.target.value })} rows={4} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-700" />
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <Select label="Audience" value={announcement.audience} options={["All Employees", "Department", "Location"]} onChange={(value) => setAnnouncement({ ...announcement, audience: value })} />
+                  <Select label="Priority" value={announcement.priority} options={["Normal", "High", "Critical", "Low"]} onChange={(value) => setAnnouncement({ ...announcement, priority: value })} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Input label="Department" value={announcement.department} onChange={(value) => setAnnouncement({ ...announcement, department: value })} />
+                  <Input label="Location ID" value={announcement.location_id} onChange={(value) => setAnnouncement({ ...announcement, location_id: value })} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Input label="Publish Date" value={announcement.publish_date} onChange={(value) => setAnnouncement({ ...announcement, publish_date: value })} />
+                  <Input label="Expiry Date" value={announcement.expiry_date} onChange={(value) => setAnnouncement({ ...announcement, expiry_date: value })} />
+                </div>
+                <button disabled={Boolean(busy)} onClick={publishAnnouncement} className="w-full rounded-lg bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50">
+                  {busy === "announcement" ? "Publishing" : "Publish Circular"}
+                </button>
+              </div>
+            </section>
+
+            <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold">Recent Circulars</h2>
+                <span className="text-sm text-slate-500">{dashboard?.announcements?.length || 0}</span>
+              </div>
+              <div className="mt-3 space-y-2">
+                {(dashboard?.announcements || []).length === 0 ? <p className="text-sm text-slate-500">No circulars published yet.</p> : dashboard?.announcements.slice(0, 5).map((item) => (
+                  <div key={item.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="text-sm font-semibold">{item.data.title || "Announcement"}</div>
+                      <span className="rounded-lg bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">{item.data.priority || "Normal"}</span>
+                    </div>
+                    <div className="mt-1 line-clamp-2 text-xs text-slate-500">{item.data.message}</div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
             {lastResult ? (
               <section className="rounded-lg border border-teal-200 bg-teal-50 p-4 shadow-sm">
                 <h2 className="font-semibold text-teal-900">Last Result</h2>
@@ -229,5 +319,25 @@ function Queue({ title, rows }: { title: string; rows: AttendanceRecord[] }) {
         ))}
       </div>
     </section>
+  );
+}
+
+function Input({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="block">
+      <span className="text-xs font-medium text-slate-500">{label}</span>
+      <input value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-teal-700" />
+    </label>
+  );
+}
+
+function Select({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
+  return (
+    <label className="block">
+      <span className="text-xs font-medium text-slate-500">{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-teal-700">
+        {options.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+    </label>
   );
 }

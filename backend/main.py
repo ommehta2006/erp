@@ -296,6 +296,18 @@ class HrShiftRosterRequest(BaseModel):
 class NotificationReadRequest(BaseModel):
     notification_id: str
 
+class AnnouncementRequest(BaseModel):
+    title: str
+    message: str
+    audience: str = "All Employees"
+    department: str | None = None
+    location_id: str | None = None
+    priority: str = "Normal"
+    publish_date: str | None = None
+    expiry_date: str | None = None
+    approval_status: str = "Approved"
+    status: str = "Published"
+
 class AdminJobRunRequest(BaseModel):
     job_type: str
     dry_run: bool = False
@@ -1157,6 +1169,62 @@ def _employee_notifications(employee_code: str, email: str, limit: int = 100):
             or item.get("data", {}).get("recipient_email", "").strip().lower() == normalized_email
         )
     ]
+
+def _employee_announcements(employee_code: str, email: str, limit: int = 100):
+    employee = _active_record(_records_for_employee("employees", employee_code, 20)) or _active_record(_records_by_field("employees", "email", email, 20))
+    employee_data = employee.get("data", {}) if employee else {}
+    department = employee_data.get("department", "").strip().lower()
+    assignment, _ = _employee_work_location(employee_data.get("employee_code") or employee_code)
+    location_id = (assignment.get("data", {}).get("location_id", "") if assignment else "").strip().lower()
+    today = _today()
+    visible = []
+    for item in _items("announcements", limit):
+        data = item.get("data", {})
+        status = (data.get("status") or item.get("status") or "").strip()
+        approval = data.get("approval_status", "").strip()
+        if status not in {"Published", "Active"} or approval not in {"Approved", "Published"}:
+            continue
+        if data.get("publish_date") and data.get("publish_date") > today:
+            continue
+        if data.get("expiry_date") and data.get("expiry_date") < today:
+            continue
+        audience = data.get("audience", "All Employees").strip().lower()
+        target_department = data.get("department", "").strip().lower()
+        target_location = data.get("location_id", "").strip().lower()
+        target_employee = data.get("employee_code", "").strip().lower()
+        if target_employee and target_employee not in {employee_code.lower(), email.lower(), employee_data.get("employee_code", "").lower()}:
+            continue
+        if audience == "department" and target_department and target_department != department:
+            continue
+        if audience in {"location", "work location"} and target_location and target_location != location_id:
+            continue
+        visible.append(item)
+    return visible
+
+def _create_announcement(payload: AnnouncementRequest, actor: str):
+    title = payload.title.strip()
+    message = payload.message.strip()
+    if not title or not message:
+        raise HTTPException(status_code=422, detail="title and message are required.")
+    priority = payload.priority.strip().title()
+    if priority not in {"Low", "Normal", "High", "Critical"}:
+        raise HTTPException(status_code=422, detail="priority must be Low, Normal, High, or Critical.")
+    item = storage.create_record("announcements", {
+        "announcement_id": _new_ref("ANN"),
+        "title": title,
+        "message": message,
+        "audience": payload.audience.strip() or "All Employees",
+        "department": _clean_text(payload.department),
+        "location_id": _clean_text(payload.location_id),
+        "priority": priority,
+        "publish_date": payload.publish_date or _today(),
+        "expiry_date": _clean_text(payload.expiry_date),
+        "published_by": actor,
+        "approval_status": payload.approval_status.strip() or "Approved",
+        "status": payload.status.strip() or "Published",
+    })
+    _write_audit(actor, "publish_announcement", "announcements", item.get("data", {}).get("announcement_id", item.get("id", "")), item.get("data", {}), "Employee announcement/circular published.")
+    return item
 
 def _salary_slip_rows(employee_code: str, limit: int = 24):
     rows = _records_for_employee("salary_slips", employee_code, limit)
@@ -2578,6 +2646,7 @@ def _run_payroll_preparation_job(actor: str, dry_run: bool):
 def _operations_dashboard():
     jobs = _items("automation_jobs", 200)
     notifications = _items("notifications", 500)
+    announcements = _items("announcements", 500)
     attendance = _attendance_dashboard()
     return {
         "stats": {
@@ -2585,12 +2654,15 @@ def _operations_dashboard():
             "completed_jobs": _status_count(jobs, "Completed"),
             "dry_runs": len([item for item in jobs if item.get("data", {}).get("schedule") == "Manual Dry Run"]),
             "notifications_open": _status_count(notifications, "Open"),
+            "announcements_published": len([item for item in announcements if (item.get("data", {}).get("status") or item.get("status")) in {"Published", "Active"}]),
+            "critical_announcements": len([item for item in announcements if item.get("data", {}).get("priority") == "Critical"]),
             "missing_day_out": attendance["stats"]["missing_day_out"],
             "pending_attendance": attendance["stats"]["pending_records"],
             "high_risk_attendance": attendance["stats"]["high_risk_attendance"],
             "high_risk_devices": attendance["stats"]["high_risk_devices"],
         },
         "jobs": jobs[:100],
+        "announcements": announcements[:100],
         "available_jobs": [
             {"job_type": "missing_day_out_detection", "title": "Missing Day Out Detection", "description": "Find active Day In records without Day Out and send employee notifications."},
             {"job_type": "late_mark_finalization", "title": "Late Mark Finalization", "description": "Apply HR policy late marks from backend attendance records."},
@@ -4353,6 +4425,7 @@ def employee_summary(email: str = Depends(_verify)):
     calendar = _attendance_calendar(employee_code)
     salary = _salary_slip_rows(employee_code, 12)
     notifications = _employee_notifications(employee_code, email, 100)
+    announcements = _employee_announcements(employee_code, email, 100)
     leaves = _records_for_employee("leave_requests", employee_code, 100)
     balances = _records_for_employee("leave_balances", employee_code, 20)
     locations = _records_for_employee("employee_locations", employee_code, 20)
@@ -4376,6 +4449,10 @@ def employee_summary(email: str = Depends(_verify)):
         "notifications": {
             "unread": len([row for row in notifications if row.get("data", {}).get("read_status", "Unread") == "Unread"]),
             "latest": notifications[0].get("data", {}) if notifications else None,
+        },
+        "announcements": {
+            "count": len(announcements),
+            "latest": announcements[0].get("data", {}) if announcements else None,
         },
         "tracking": {
             "last_location": locations[0].get("data", {}) if locations else None,
@@ -5395,6 +5472,12 @@ def v1_employee_notifications(email: str = Depends(_verify)):
         "unread": len([row for row in notifications if row.get("data", {}).get("read_status", "Unread") == "Unread"]),
     }
 
+@app.get("/api/v1/employee/announcements")
+def v1_employee_announcements(email: str = Depends(_verify)):
+    employee_code = _employee_code(email)
+    items = _employee_announcements(employee_code, email, 100)
+    return {"items": items, "count": len(items)}
+
 @app.post("/api/v1/employee/notifications/read")
 def v1_employee_notification_read(payload: NotificationReadRequest, email: str = Depends(_verify)):
     employee_code = _employee_code(email)
@@ -5409,6 +5492,25 @@ def v1_employee_notification_read(payload: NotificationReadRequest, email: str =
         raise HTTPException(status_code=404, detail="Notification not found.")
     updated = storage.update_record("notifications", notification.get("id", ""), {"read_status": "Read", "status": "Closed"})
     return {"item": updated, "dashboard": v1_employee_notifications(email)}
+
+@app.get("/api/v1/admin/announcements")
+def v1_admin_announcements(email: str = Depends(_verify)):
+    _require_permission(email, "admin:read")
+    items = _items("announcements", 500)
+    return {
+        "items": items,
+        "stats": {
+            "announcements": len(items),
+            "published": len([item for item in items if (item.get("data", {}).get("status") or item.get("status")) in {"Published", "Active"}]),
+            "critical": len([item for item in items if item.get("data", {}).get("priority") == "Critical"]),
+        },
+    }
+
+@app.post("/api/v1/admin/announcements")
+def v1_admin_publish_announcement(payload: AnnouncementRequest, email: str = Depends(_verify)):
+    _require_permission(email, "admin:write")
+    item = _create_announcement(payload, email)
+    return {"item": item, "dashboard": v1_admin_announcements(email)}
 
 @app.post("/api/mobile/employee/leave")
 def employee_leave(payload: LeaveApplyRequest, email: str = Depends(_verify)):

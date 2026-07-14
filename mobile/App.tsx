@@ -45,6 +45,7 @@ type EmployeeSummary = {
   leave: { pending: number; approved: number; balances: Record<string, string>[] };
   salary: { latest: Record<string, string> | null; count: number };
   notifications: { unread: number; latest: Record<string, string> | null };
+  announcements: { count: number; latest: Record<string, string> | null };
   tracking: { last_location: Record<string, string> | null; ping_count: number };
 };
 type AttendanceCalendar = {
@@ -87,6 +88,7 @@ type SalarySlip = {
 };
 type SalaryDashboard = { items: SalarySlip[]; latest: SalarySlip | null; totals: { gross_pay: number; deductions: number; net_pay: number } };
 type NotificationDashboard = { items: RecordItem[]; unread: number };
+type AnnouncementDashboard = { items: RecordItem[]; count: number };
 type Screen =
   | { name: "home" }
   | { name: "work" }
@@ -304,6 +306,7 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
   const { data: history, loading: historyLoading, error: historyError, refresh: refreshHistory } = useApi<EmployeeHistory>(token, "/api/v1/employee/attendance/history");
   const { data: salary, loading: salaryLoading, error: salaryError, refresh: refreshSalary } = useApi<SalaryDashboard>(token, "/api/v1/employee/salary-slips");
   const { data: notifications, loading: notificationsLoading, error: notificationsError, refresh: refreshNotifications } = useApi<NotificationDashboard>(token, "/api/v1/employee/notifications");
+  const { data: announcements, loading: announcementsLoading, error: announcementsError, refresh: refreshAnnouncements } = useApi<AnnouncementDashboard>(token, "/api/v1/employee/announcements");
   const [busy, setBusy] = useState(false);
   const [leaveType, setLeaveType] = useState("Casual Leave");
   const [fromDate, setFromDate] = useState("");
@@ -389,6 +392,7 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
       refresh();
       refreshHistory();
       refreshNotifications();
+      refreshAnnouncements();
     } catch (err) {
       Alert.alert("Attendance", err instanceof Error ? err.message : "Attendance action failed");
     } finally {
@@ -432,6 +436,7 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
       refresh();
       refreshHistory();
       refreshNotifications();
+      refreshAnnouncements();
     } catch (err) {
       Alert.alert("Leave request", err instanceof Error ? err.message : "Leave apply failed");
     } finally {
@@ -467,6 +472,7 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
       Alert.alert("Correction request", "Request submitted to HR for approval.");
       refreshHistory();
       refreshNotifications();
+      refreshAnnouncements();
     } catch (err) {
       Alert.alert("Correction request", err instanceof Error ? err.message : "Correction request failed");
     } finally {
@@ -496,12 +502,13 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
   }
 
   return (
-    <ScreenScroll refresh={() => { refresh(); refreshHistory(); refreshSalary(); refreshNotifications(); }} loading={loading || historyLoading || salaryLoading || notificationsLoading}>
+    <ScreenScroll refresh={() => { refresh(); refreshHistory(); refreshSalary(); refreshNotifications(); refreshAnnouncements(); }} loading={loading || historyLoading || salaryLoading || notificationsLoading || announcementsLoading}>
       <TopBar title="Employee Work" subtitle="Attendance, leave, salary, calendar and location controls" />
       {error ? <ErrorBanner message={error} /> : null}
       {historyError ? <ErrorBanner message={historyError} /> : null}
       {salaryError ? <ErrorBanner message={salaryError} /> : null}
       {notificationsError ? <ErrorBanner message={notificationsError} /> : null}
+      {announcementsError ? <ErrorBanner message={announcementsError} /> : null}
 
       <LinearGradient colors={data?.attendance.checked_in ? ["#065f46", "#0f766e"] : ["#0f172a", "#334155"]} style={styles.attendanceCard}>
         <View style={styles.moduleHeader}>
@@ -547,6 +554,23 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
           </View>
           <Text style={styles.notificationStatus}>{item.data.read_status || "Unread"}</Text>
         </Pressable>
+      ))}
+
+      <SectionHeader title="Announcements & Circulars" action={`${announcements?.count || data?.announcements?.count || 0} active`} />
+      {(announcements?.items || []).length === 0 ? (
+        <EmptyState title="No circulars" body="Approved HR circulars, safety notices, and factory announcements will appear here." />
+      ) : announcements?.items.slice(0, 5).map((item) => (
+        <View key={item.id} style={[styles.announcementCard, item.data.priority === "Critical" && styles.announcementCritical]}>
+          <View style={styles.announcementHeader}>
+            <Text style={styles.announcementPriority}>{item.data.priority || "Normal"}</Text>
+            <Text style={styles.announcementDate}>{item.data.publish_date || "Published"}</Text>
+          </View>
+          <Text style={styles.announcementTitle}>{item.data.title || "Factory circular"}</Text>
+          <Text style={styles.announcementBody}>{item.data.message || "Announcement details unavailable."}</Text>
+          <Text style={styles.announcementMeta}>
+            {item.data.audience || "All Employees"}{item.data.department ? ` / ${item.data.department}` : ""}{item.data.expiry_date ? ` / valid until ${item.data.expiry_date}` : ""}
+          </Text>
+        </View>
       ))}
 
       <SectionHeader title="This Month" />
@@ -1104,6 +1128,14 @@ const styles = StyleSheet.create({
   notificationTitle: { color: "#0f172a", fontSize: 14, fontWeight: "900" },
   notificationBody: { marginTop: 3, color: "#64748b", fontSize: 12, lineHeight: 17 },
   notificationStatus: { overflow: "hidden", borderRadius: 10, backgroundColor: "#ccfbf1", paddingHorizontal: 8, paddingVertical: 5, color: "#0f766e", fontSize: 12, fontWeight: "900" },
+  announcementCard: { borderRadius: 18, backgroundColor: "white", padding: 15, borderWidth: 1, borderColor: "#e2e8f0", marginBottom: 10 },
+  announcementCritical: { borderColor: "#fecaca", backgroundColor: "#fff7ed" },
+  announcementHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  announcementPriority: { overflow: "hidden", borderRadius: 10, backgroundColor: "#fef3c7", paddingHorizontal: 8, paddingVertical: 5, color: "#92400e", fontSize: 11, fontWeight: "900" },
+  announcementDate: { color: "#64748b", fontSize: 11, fontWeight: "700" },
+  announcementTitle: { marginTop: 10, color: "#0f172a", fontSize: 16, fontWeight: "900" },
+  announcementBody: { marginTop: 6, color: "#334155", fontSize: 13, lineHeight: 19 },
+  announcementMeta: { marginTop: 10, color: "#64748b", fontSize: 11, fontWeight: "700" },
   salaryAmount: { marginTop: 8, color: "#0f766e", fontSize: 30, fontWeight: "900" },
   salaryLine: { marginTop: 10, flexDirection: "row", justifyContent: "space-between", gap: 12, borderTopWidth: 1, borderTopColor: "#f1f5f9", paddingTop: 10 },
   salaryLineName: { color: "#334155", fontSize: 13, fontWeight: "800" },
