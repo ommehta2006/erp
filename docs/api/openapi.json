@@ -1346,6 +1346,114 @@
         }
       }
     },
+    "/api/v1/hr/shift-assignments": {
+      "post": {
+        "summary": "V1 Hr Shift Assignment",
+        "operationId": "v1_hr_shift_assignment_api_v1_hr_shift_assignments_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HrShiftAssignmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hr/shift-rosters": {
+      "post": {
+        "summary": "V1 Hr Shift Roster",
+        "operationId": "v1_hr_shift_roster_api_v1_hr_shift_rosters_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HrShiftRosterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/hr/attendance-dashboard": {
       "get": {
         "summary": "V1 Hr Attendance Dashboard",
@@ -4579,11 +4687,82 @@
         ],
         "title": "HrLocationAssignmentRequest"
       },
+      "HrShiftAssignmentRequest": {
+        "properties": {
+          "employee_code": {
+            "type": "string",
+            "title": "Employee Code"
+          },
+          "shift": {
+            "type": "string",
+            "title": "Shift"
+          },
+          "shift_type": {
+            "type": "string",
+            "title": "Shift Type",
+            "default": "Fixed"
+          },
+          "effective_start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Start Date"
+          },
+          "effective_end_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective End Date"
+          },
+          "assignment_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignment Reason"
+          },
+          "approval_status": {
+            "type": "string",
+            "title": "Approval Status",
+            "default": "Approved"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "Active"
+          }
+        },
+        "type": "object",
+        "required": [
+          "employee_code",
+          "shift"
+        ],
+        "title": "HrShiftAssignmentRequest"
+      },
       "HrShiftRequest": {
         "properties": {
           "name": {
             "type": "string",
             "title": "Name"
+          },
+          "shift_type": {
+            "type": "string",
+            "title": "Shift Type",
+            "default": "Fixed"
           },
           "start_time": {
             "type": "string",
@@ -4592,6 +4771,170 @@
           "end_time": {
             "type": "string",
             "title": "End Time"
+          },
+          "cross_midnight": {
+            "type": "boolean",
+            "title": "Cross Midnight",
+            "default": false
+          },
+          "day_in_open_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day In Open Time"
+          },
+          "day_in_close_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day In Close Time"
+          },
+          "day_out_open_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Out Open Time"
+          },
+          "day_out_close_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Out Close Time"
+          },
+          "grace_minutes": {
+            "type": "integer",
+            "title": "Grace Minutes",
+            "default": 0
+          },
+          "minimum_full_day_minutes": {
+            "type": "integer",
+            "title": "Minimum Full Day Minutes",
+            "default": 480
+          },
+          "minimum_half_day_minutes": {
+            "type": "integer",
+            "title": "Minimum Half Day Minutes",
+            "default": 240
+          },
+          "break_minutes": {
+            "type": "integer",
+            "title": "Break Minutes",
+            "default": 0
+          },
+          "auto_break_deduction": {
+            "type": "boolean",
+            "title": "Auto Break Deduction",
+            "default": false
+          },
+          "overtime_eligible": {
+            "type": "boolean",
+            "title": "Overtime Eligible",
+            "default": false
+          },
+          "overtime_approval_required": {
+            "type": "boolean",
+            "title": "Overtime Approval Required",
+            "default": true
+          },
+          "early_exit_grace_minutes": {
+            "type": "integer",
+            "title": "Early Exit Grace Minutes",
+            "default": 0
+          },
+          "late_mark_after_minutes": {
+            "type": "integer",
+            "title": "Late Mark After Minutes",
+            "default": 0
+          },
+          "maximum_late_marks": {
+            "type": "integer",
+            "title": "Maximum Late Marks",
+            "default": 3
+          },
+          "weekly_working_days": {
+            "type": "string",
+            "title": "Weekly Working Days",
+            "default": "Mon,Tue,Wed,Thu,Fri,Sat"
+          },
+          "weekly_offs": {
+            "type": "string",
+            "title": "Weekly Offs",
+            "default": "Sun"
+          },
+          "applicable_locations": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applicable Locations"
+          },
+          "applicable_departments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applicable Departments"
+          },
+          "applicable_employees": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applicable Employees"
+          },
+          "effective_start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Start Date"
+          },
+          "effective_end_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective End Date"
           },
           "department": {
             "type": "string",
@@ -4622,6 +4965,82 @@
           "end_time"
         ],
         "title": "HrShiftRequest"
+      },
+      "HrShiftRosterRequest": {
+        "properties": {
+          "employee_code": {
+            "type": "string",
+            "title": "Employee Code"
+          },
+          "shift": {
+            "type": "string",
+            "title": "Shift"
+          },
+          "roster_date": {
+            "type": "string",
+            "title": "Roster Date"
+          },
+          "location_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Id"
+          },
+          "planned_start_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Start Time"
+          },
+          "planned_end_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned End Time"
+          },
+          "roster_type": {
+            "type": "string",
+            "title": "Roster Type",
+            "default": "Regular"
+          },
+          "published_status": {
+            "type": "string",
+            "title": "Published Status",
+            "default": "Published"
+          },
+          "approval_status": {
+            "type": "string",
+            "title": "Approval Status",
+            "default": "Approved"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "Active"
+          }
+        },
+        "type": "object",
+        "required": [
+          "employee_code",
+          "shift",
+          "roster_date"
+        ],
+        "title": "HrShiftRosterRequest"
       },
       "HrWorkLocationRequest": {
         "properties": {

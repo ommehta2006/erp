@@ -12,6 +12,7 @@ type SettingsDashboard = {
   policies: ErpRecord[];
   shifts: ErpRecord[];
   shift_assignments: ErpRecord[];
+  shift_rosters: ErpRecord[];
   stats: Record<string, number | string>;
   rules: Record<string, string>;
 };
@@ -26,10 +27,52 @@ const DEFAULT_POLICY = {
 
 const DEFAULT_SHIFT = {
   name: "",
+  shift_type: "Fixed",
   start_time: "09:00",
   end_time: "18:00",
+  cross_midnight: false,
+  day_in_open_time: "08:30",
+  day_in_close_time: "10:00",
+  day_out_open_time: "17:30",
+  day_out_close_time: "19:30",
+  grace_minutes: "0",
+  minimum_full_day_minutes: "480",
+  minimum_half_day_minutes: "240",
+  break_minutes: "0",
+  auto_break_deduction: false,
+  overtime_eligible: false,
+  overtime_approval_required: true,
+  early_exit_grace_minutes: "0",
+  late_mark_after_minutes: "15",
+  maximum_late_marks: "3",
+  weekly_working_days: "Mon,Tue,Wed,Thu,Fri,Sat",
+  weekly_offs: "Sun",
+  applicable_locations: "",
+  applicable_departments: "",
+  applicable_employees: "",
+  effective_start_date: "",
+  effective_end_date: "",
   department: "All",
   supervisor: "",
+};
+
+const DEFAULT_ASSIGNMENT = {
+  employee_code: "",
+  shift: "",
+  shift_type: "Fixed",
+  effective_start_date: "",
+  effective_end_date: "",
+  assignment_reason: "",
+};
+
+const DEFAULT_ROSTER = {
+  employee_code: "",
+  shift: "",
+  roster_date: new Date().toISOString().slice(0, 10),
+  location_id: "",
+  planned_start_time: "",
+  planned_end_time: "",
+  roster_type: "Regular",
 };
 
 function authHeaders() {
@@ -53,6 +96,8 @@ export default function HrSettingsPage() {
   const [dashboard, setDashboard] = useState<SettingsDashboard | null>(null);
   const [policy, setPolicy] = useState(DEFAULT_POLICY);
   const [shift, setShift] = useState(DEFAULT_SHIFT);
+  const [assignment, setAssignment] = useState(DEFAULT_ASSIGNMENT);
+  const [roster, setRoster] = useState(DEFAULT_ROSTER);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -112,7 +157,11 @@ export default function HrSettingsPage() {
     ["Shifts", String(dashboard?.stats.shifts || 0)],
     ["Active Shifts", String(dashboard?.stats.active_shifts || 0)],
     ["Assignments", String(dashboard?.stats.assignments || 0)],
+    ["Rosters", String(dashboard?.stats.rosters || 0)],
+    ["Today Rosters", String(dashboard?.stats.today_rosters || 0)],
+    ["Night Shifts", String(dashboard?.stats.night_shifts || 0)],
   ];
+  const shiftNames = (dashboard?.shifts || []).map((item) => item.data.name).filter(Boolean);
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-950">
@@ -191,26 +240,103 @@ export default function HrSettingsPage() {
               <h2 className="font-semibold">Create Shift</h2>
               <div className="mt-3 space-y-3">
                 <Input label="Shift Name" value={shift.name} onChange={(value) => setShift({ ...shift, name: value })} />
+                <Select label="Shift Type" value={shift.shift_type} options={["Fixed", "Rotational", "Night", "Flexible", "Split", "Temporary"]} onChange={(value) => setShift({ ...shift, shift_type: value, cross_midnight: value === "Night" || shift.cross_midnight })} />
                 <div className="grid grid-cols-2 gap-3">
                   <Input label="Start Time" value={shift.start_time} onChange={(value) => setShift({ ...shift, start_time: value })} />
                   <Input label="End Time" value={shift.end_time} onChange={(value) => setShift({ ...shift, end_time: value })} />
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Input label="Day In Opens" value={shift.day_in_open_time} onChange={(value) => setShift({ ...shift, day_in_open_time: value })} />
+                  <Input label="Day In Closes" value={shift.day_in_close_time} onChange={(value) => setShift({ ...shift, day_in_close_time: value })} />
+                  <Input label="Day Out Opens" value={shift.day_out_open_time} onChange={(value) => setShift({ ...shift, day_out_open_time: value })} />
+                  <Input label="Day Out Closes" value={shift.day_out_close_time} onChange={(value) => setShift({ ...shift, day_out_close_time: value })} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Input label="Grace Minutes" value={shift.grace_minutes} onChange={(value) => setShift({ ...shift, grace_minutes: value })} />
+                  <Input label="Late After Minutes" value={shift.late_mark_after_minutes} onChange={(value) => setShift({ ...shift, late_mark_after_minutes: value })} />
+                  <Input label="Full Day Minutes" value={shift.minimum_full_day_minutes} onChange={(value) => setShift({ ...shift, minimum_full_day_minutes: value })} />
+                  <Input label="Half Day Minutes" value={shift.minimum_half_day_minutes} onChange={(value) => setShift({ ...shift, minimum_half_day_minutes: value })} />
+                  <Input label="Break Minutes" value={shift.break_minutes} onChange={(value) => setShift({ ...shift, break_minutes: value })} />
+                  <Input label="Early Exit Grace" value={shift.early_exit_grace_minutes} onChange={(value) => setShift({ ...shift, early_exit_grace_minutes: value })} />
+                </div>
+                <div className="grid gap-2">
+                  <Toggle label="Cross-midnight shift" checked={shift.cross_midnight} onChange={(value) => setShift({ ...shift, cross_midnight: value })} />
+                  <Toggle label="Auto break deduction" checked={shift.auto_break_deduction} onChange={(value) => setShift({ ...shift, auto_break_deduction: value })} />
+                  <Toggle label="Overtime eligible" checked={shift.overtime_eligible} onChange={(value) => setShift({ ...shift, overtime_eligible: value })} />
+                  <Toggle label="Overtime approval required" checked={shift.overtime_approval_required} onChange={(value) => setShift({ ...shift, overtime_approval_required: value })} />
+                </div>
                 <Input label="Department" value={shift.department} onChange={(value) => setShift({ ...shift, department: value })} />
                 <Input label="Supervisor" value={shift.supervisor} onChange={(value) => setShift({ ...shift, supervisor: value })} />
+                <Input label="Weekly Working Days" value={shift.weekly_working_days} onChange={(value) => setShift({ ...shift, weekly_working_days: value })} />
+                <Input label="Weekly Offs" value={shift.weekly_offs} onChange={(value) => setShift({ ...shift, weekly_offs: value })} />
               </div>
               <button
                 disabled={busy === "/api/v1/hr/shifts"}
-                onClick={() => postJson("/api/v1/hr/shifts", shift, "Shift saved.")}
+                onClick={() => postJson("/api/v1/hr/shifts", {
+                  ...shift,
+                  grace_minutes: numeric(shift.grace_minutes),
+                  minimum_full_day_minutes: numeric(shift.minimum_full_day_minutes),
+                  minimum_half_day_minutes: numeric(shift.minimum_half_day_minutes),
+                  break_minutes: numeric(shift.break_minutes),
+                  early_exit_grace_minutes: numeric(shift.early_exit_grace_minutes),
+                  late_mark_after_minutes: numeric(shift.late_mark_after_minutes),
+                  maximum_late_marks: numeric(shift.maximum_late_marks),
+                }, "Shift saved.")}
                 className="mt-4 w-full rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
               >
                 {busy === "/api/v1/hr/shifts" ? "Saving..." : "Save shift"}
+              </button>
+            </section>
+
+            <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <h2 className="font-semibold">Assign Employee Shift</h2>
+              <div className="mt-3 space-y-3">
+                <Input label="Employee Code" value={assignment.employee_code} onChange={(value) => setAssignment({ ...assignment, employee_code: value })} />
+                <Select label="Shift" value={assignment.shift} options={["", ...shiftNames]} onChange={(value) => setAssignment({ ...assignment, shift: value })} />
+                <Select label="Assignment Type" value={assignment.shift_type} options={["Fixed", "Rotational", "Night", "Flexible", "Split", "Temporary"]} onChange={(value) => setAssignment({ ...assignment, shift_type: value })} />
+                <div className="grid grid-cols-2 gap-3">
+                  <Input label="Effective Start" value={assignment.effective_start_date} onChange={(value) => setAssignment({ ...assignment, effective_start_date: value })} />
+                  <Input label="Effective End" value={assignment.effective_end_date} onChange={(value) => setAssignment({ ...assignment, effective_end_date: value })} />
+                </div>
+                <Input label="Reason" value={assignment.assignment_reason} onChange={(value) => setAssignment({ ...assignment, assignment_reason: value })} />
+              </div>
+              <button
+                disabled={busy === "/api/v1/hr/shift-assignments"}
+                onClick={() => postJson("/api/v1/hr/shift-assignments", assignment, "Employee shift assigned.")}
+                className="mt-4 w-full rounded-lg bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
+              >
+                {busy === "/api/v1/hr/shift-assignments" ? "Assigning..." : "Assign shift"}
+              </button>
+            </section>
+
+            <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <h2 className="font-semibold">Publish Roster</h2>
+              <div className="mt-3 space-y-3">
+                <Input label="Employee Code" value={roster.employee_code} onChange={(value) => setRoster({ ...roster, employee_code: value })} />
+                <Select label="Shift" value={roster.shift} options={["", ...shiftNames]} onChange={(value) => setRoster({ ...roster, shift: value })} />
+                <Input label="Roster Date" value={roster.roster_date} onChange={(value) => setRoster({ ...roster, roster_date: value })} />
+                <Input label="Location ID" value={roster.location_id} onChange={(value) => setRoster({ ...roster, location_id: value })} />
+                <div className="grid grid-cols-2 gap-3">
+                  <Input label="Planned Start" value={roster.planned_start_time} onChange={(value) => setRoster({ ...roster, planned_start_time: value })} />
+                  <Input label="Planned End" value={roster.planned_end_time} onChange={(value) => setRoster({ ...roster, planned_end_time: value })} />
+                </div>
+                <Select label="Roster Type" value={roster.roster_type} options={["Regular", "Overtime", "Temporary", "Night", "Split", "Field Duty"]} onChange={(value) => setRoster({ ...roster, roster_type: value })} />
+              </div>
+              <button
+                disabled={busy === "/api/v1/hr/shift-rosters"}
+                onClick={() => postJson("/api/v1/hr/shift-rosters", roster, "Roster published.")}
+                className="mt-4 w-full rounded-lg bg-indigo-700 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-800 disabled:opacity-50"
+              >
+                {busy === "/api/v1/hr/shift-rosters" ? "Publishing..." : "Publish roster"}
               </button>
             </section>
           </aside>
 
           <section className="space-y-4">
             <Table title="Attendance Policies" empty="No policy records yet." rows={dashboard?.policies || []} columns={["policy_name", "late_after_time", "grace_minutes", "tracking_interval_minutes", "background_location_required"]} />
-            <Table title="Shift Definitions" empty="No shifts yet." rows={dashboard?.shifts || []} columns={["name", "start_time", "end_time", "department", "supervisor"]} />
+            <Table title="Shift Definitions" empty="No shifts yet." rows={dashboard?.shifts || []} columns={["name", "shift_type", "start_time", "end_time", "cross_midnight", "minimum_full_day_minutes", "overtime_eligible", "department"]} />
+            <Table title="Employee Shift Assignments" empty="No shift assignments yet." rows={dashboard?.shift_assignments || []} columns={["employee_code", "shift", "shift_type", "effective_start_date", "effective_end_date", "approval_status"]} />
+            <Table title="Published Rosters" empty="No rosters yet." rows={dashboard?.shift_rosters || []} columns={["employee_code", "shift", "roster_date", "planned_start_time", "planned_end_time", "location_id", "published_status"]} />
           </section>
         </div>
       </section>
@@ -223,6 +349,26 @@ function Input({ label, value, onChange }: { label: string; value: string; onCha
     <label className="block">
       <span className="text-xs font-medium text-slate-500">{label}</span>
       <input value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-teal-700" />
+    </label>
+  );
+}
+
+function Select({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
+  return (
+    <label className="block">
+      <span className="text-xs font-medium text-slate-500">{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-teal-700">
+        {options.map((option) => <option key={option || "blank"} value={option}>{option || "Select"}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <label className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+      <span>{label}</span>
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
     </label>
   );
 }

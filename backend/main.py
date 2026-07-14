@@ -206,10 +206,55 @@ class HrAttendancePolicyRequest(BaseModel):
 
 class HrShiftRequest(BaseModel):
     name: str
+    shift_type: str = "Fixed"
     start_time: str
     end_time: str
+    cross_midnight: bool = False
+    day_in_open_time: str | None = None
+    day_in_close_time: str | None = None
+    day_out_open_time: str | None = None
+    day_out_close_time: str | None = None
+    grace_minutes: int = 0
+    minimum_full_day_minutes: int = 480
+    minimum_half_day_minutes: int = 240
+    break_minutes: int = 0
+    auto_break_deduction: bool = False
+    overtime_eligible: bool = False
+    overtime_approval_required: bool = True
+    early_exit_grace_minutes: int = 0
+    late_mark_after_minutes: int = 0
+    maximum_late_marks: int = 3
+    weekly_working_days: str = "Mon,Tue,Wed,Thu,Fri,Sat"
+    weekly_offs: str = "Sun"
+    applicable_locations: str | None = None
+    applicable_departments: str | None = None
+    applicable_employees: str | None = None
+    effective_start_date: str | None = None
+    effective_end_date: str | None = None
     department: str = "All"
     supervisor: str | None = None
+    status: str = "Active"
+
+class HrShiftAssignmentRequest(BaseModel):
+    employee_code: str
+    shift: str
+    shift_type: str = "Fixed"
+    effective_start_date: str | None = None
+    effective_end_date: str | None = None
+    assignment_reason: str | None = None
+    approval_status: str = "Approved"
+    status: str = "Active"
+
+class HrShiftRosterRequest(BaseModel):
+    employee_code: str
+    shift: str
+    roster_date: str
+    location_id: str | None = None
+    planned_start_time: str | None = None
+    planned_end_time: str | None = None
+    roster_type: str = "Regular"
+    published_status: str = "Published"
+    approval_status: str = "Approved"
     status: str = "Active"
 
 class NotificationReadRequest(BaseModel):
@@ -2584,23 +2629,62 @@ def _validate_hhmm(value: str, field: str) -> str:
         raise HTTPException(status_code=422, detail=f"{field} must use HH:MM 24-hour format.")
     return clean
 
+def _optional_hhmm(value: str | None, fallback: str, field: str) -> str:
+    clean = _clean_text(value)
+    return _validate_hhmm(clean, field) if clean else fallback
+
+def _active_shift_for_employee(employee_code: str, target_date: str | None = None):
+    target = target_date or _today()
+    rosters = [
+        item for item in _records_for_employee("shift_rosters", employee_code, 500)
+        if item.get("data", {}).get("roster_date") == target and (item.get("data", {}).get("status") or item.get("status")) == "Active"
+    ]
+    roster = rosters[0] if rosters else None
+    shift_name = roster.get("data", {}).get("shift") if roster else ""
+    if not shift_name:
+        assignments = [
+            item for item in _records_for_employee("employee_shift_assignments", employee_code, 500)
+            if (item.get("data", {}).get("status") or item.get("status")) == "Active"
+            and (not item.get("data", {}).get("effective_start_date") or item.get("data", {}).get("effective_start_date") <= target)
+            and (not item.get("data", {}).get("effective_end_date") or item.get("data", {}).get("effective_end_date") >= target)
+        ]
+        assignment = assignments[0] if assignments else None
+        shift_name = assignment.get("data", {}).get("shift") if assignment else ""
+    shift = next(
+        (
+            item for item in _items("shifts", 500)
+            if item.get("data", {}).get("name", "").strip().lower() == (shift_name or "").strip().lower()
+            and (item.get("data", {}).get("status") or item.get("status")) == "Active"
+        ),
+        None,
+    )
+    return {"roster": roster, "shift": shift, "shift_name": shift_name or "General"}
+
 def _hr_settings_dashboard():
     policies = _items("attendance_policies", 100)
     shifts = _items("shifts", 200)
     shift_assignments = _items("employee_shift_assignments", 500)
+    rosters = _items("shift_rosters", 500)
     active_policy = _attendance_policy()
     active_shifts = [item for item in shifts if item.get("status") == "Active"]
+    today = _today()
+    today_rosters = [item for item in rosters if item.get("data", {}).get("roster_date") == today]
+    night_shifts = [item for item in shifts if item.get("data", {}).get("cross_midnight") == "Yes"]
     return {
         "active_policy": active_policy,
         "policies": policies,
         "shifts": shifts,
         "shift_assignments": shift_assignments,
+        "shift_rosters": rosters,
         "stats": {
             "policies": len(policies),
             "active_policies": len([item for item in policies if item.get("status") == "Active"]),
             "shifts": len(shifts),
             "active_shifts": len(active_shifts),
             "assignments": len(shift_assignments),
+            "rosters": len(rosters),
+            "today_rosters": len(today_rosters),
+            "night_shifts": len(night_shifts),
             "late_after_time": active_policy.get("late_after_time", "09:15"),
             "tracking_interval_minutes": active_policy.get("tracking_interval_minutes", "5"),
         },
@@ -2608,14 +2692,22 @@ def _hr_settings_dashboard():
             "late_mark_source": "HR attendance policy",
             "active_late_after_time": _late_after_time(active_policy),
             "background_location_required": active_policy.get("background_location_required", "Yes"),
-            "employee_app_effect": "Employee Day In after late_after_time is marked late by backend attendance snapshot.",
+            "employee_app_effect": "Employee Day In uses active roster/shift first, then HR attendance policy fallback.",
         },
     }
 
 def _attendance_snapshot(employee_code: str, policy: dict[str, str] | None = None):
     policy = policy or _attendance_policy()
-    late_after = _late_after_time(policy)
     today = _today()
+    shift_context = _active_shift_for_employee(employee_code, today)
+    shift_data = shift_context.get("shift", {}).get("data", {}) if shift_context.get("shift") else {}
+    late_after = shift_data.get("start_time") or _late_after_time(policy)
+    if shift_data.get("late_mark_after_minutes"):
+        try:
+            base = datetime.strptime(shift_data.get("start_time", late_after), "%H:%M")
+            late_after = (base + timedelta(minutes=int(float(shift_data.get("late_mark_after_minutes", "0"))))).strftime("%H:%M")
+        except Exception:
+            late_after = _late_after_time(policy)
     rows = _records_for_employee("attendance", employee_code)
     today_rows = [row for row in rows if row.get("data", {}).get("date") == today]
     day_in = next((row for row in today_rows if row.get("data", {}).get("check_in")), None)
@@ -2632,6 +2724,10 @@ def _attendance_snapshot(employee_code: str, policy: dict[str, str] | None = Non
         "day_out_time": day_out.get("data", {}).get("check_out") if day_out else "",
         "late_mark": late,
         "late_after_time": late_after,
+        "assigned_shift": shift_context.get("shift_name", "General"),
+        "shift_start_time": shift_data.get("start_time", ""),
+        "shift_end_time": shift_data.get("end_time", ""),
+        "cross_midnight": shift_data.get("cross_midnight", "No"),
         "records_today": len(today_rows),
     }
 
@@ -3040,15 +3136,105 @@ def v1_hr_shift(payload: HrShiftRequest, email: str = Depends(_verify)):
     end_time = _validate_hhmm(payload.end_time, "end_time")
     if not payload.name.strip():
         raise HTTPException(status_code=422, detail="name is required.")
+    if payload.minimum_half_day_minutes < 0 or payload.minimum_full_day_minutes <= 0 or payload.minimum_half_day_minutes > payload.minimum_full_day_minutes:
+        raise HTTPException(status_code=422, detail="minimum day minute rules are invalid.")
+    if payload.grace_minutes < 0 or payload.grace_minutes > 180:
+        raise HTTPException(status_code=422, detail="grace_minutes must be between 0 and 180.")
     item = storage.create_record("shifts", {
         "name": payload.name.strip(),
+        "shift_type": payload.shift_type.strip() or "Fixed",
         "start_time": start_time,
         "end_time": end_time,
+        "cross_midnight": "Yes" if payload.cross_midnight else "No",
+        "day_in_open_time": _optional_hhmm(payload.day_in_open_time, start_time, "day_in_open_time"),
+        "day_in_close_time": _optional_hhmm(payload.day_in_close_time, start_time, "day_in_close_time"),
+        "day_out_open_time": _optional_hhmm(payload.day_out_open_time, end_time, "day_out_open_time"),
+        "day_out_close_time": _optional_hhmm(payload.day_out_close_time, end_time, "day_out_close_time"),
+        "grace_minutes": str(payload.grace_minutes),
+        "minimum_full_day_minutes": str(payload.minimum_full_day_minutes),
+        "minimum_half_day_minutes": str(payload.minimum_half_day_minutes),
+        "break_minutes": str(max(payload.break_minutes, 0)),
+        "auto_break_deduction": "Yes" if payload.auto_break_deduction else "No",
+        "overtime_eligible": "Yes" if payload.overtime_eligible else "No",
+        "overtime_approval_required": "Yes" if payload.overtime_approval_required else "No",
+        "early_exit_grace_minutes": str(max(payload.early_exit_grace_minutes, 0)),
+        "late_mark_after_minutes": str(max(payload.late_mark_after_minutes, 0)),
+        "maximum_late_marks": str(max(payload.maximum_late_marks, 0)),
+        "weekly_working_days": payload.weekly_working_days.strip(),
+        "weekly_offs": payload.weekly_offs.strip(),
+        "applicable_locations": _clean_text(payload.applicable_locations),
+        "applicable_departments": _clean_text(payload.applicable_departments),
+        "applicable_employees": _clean_text(payload.applicable_employees),
+        "effective_start_date": _clean_text(payload.effective_start_date),
+        "effective_end_date": _clean_text(payload.effective_end_date),
         "department": payload.department.strip() or "All",
         "supervisor": _clean_text(payload.supervisor),
         "status": payload.status.strip() or "Active",
     })
     _write_audit(email, "create_shift", "shifts", item.get("id", ""), item.get("data", {}), "HR shift created.")
+    return {"item": item, "dashboard": _hr_settings_dashboard()}
+
+@app.post("/api/v1/hr/shift-assignments")
+def v1_hr_shift_assignment(payload: HrShiftAssignmentRequest, email: str = Depends(_verify)):
+    _require_permission(email, "hr:write")
+    if not payload.employee_code.strip() or not payload.shift.strip():
+        raise HTTPException(status_code=422, detail="employee_code and shift are required.")
+    shift = next((item for item in _items("shifts", 500) if item.get("data", {}).get("name", "").lower() == payload.shift.strip().lower()), None)
+    if not shift:
+        raise HTTPException(status_code=404, detail="Shift not found.")
+    item = storage.create_record("employee_shift_assignments", {
+        "assignment_id": _new_ref("SASSIGN"),
+        "employee_code": payload.employee_code.strip(),
+        "shift": payload.shift.strip(),
+        "shift_type": payload.shift_type.strip() or shift.get("data", {}).get("shift_type", "Fixed"),
+        "effective_start_date": _clean_text(payload.effective_start_date),
+        "effective_end_date": _clean_text(payload.effective_end_date),
+        "assignment_reason": _clean_text(payload.assignment_reason),
+        "approved_by": email,
+        "approval_status": payload.approval_status.strip() or "Approved",
+        "status": payload.status.strip() or "Active",
+    })
+    _write_audit(email, "assign_employee_shift", "employee_shift_assignments", item.get("id", ""), item.get("data", {}), "HR assigned employee shift.")
+    _notify_employee(payload.employee_code.strip(), "shift_changed", "Shift assignment updated", f"Your shift is now {payload.shift.strip()}.", payload.employee_code.strip())
+    return {"item": item, "dashboard": _hr_settings_dashboard()}
+
+@app.post("/api/v1/hr/shift-rosters")
+def v1_hr_shift_roster(payload: HrShiftRosterRequest, email: str = Depends(_verify)):
+    _require_permission(email, "hr:write")
+    if not payload.employee_code.strip() or not payload.shift.strip() or not payload.roster_date.strip():
+        raise HTTPException(status_code=422, detail="employee_code, shift, and roster_date are required.")
+    _parse_iso_date(payload.roster_date, "roster_date")
+    shift = next((item for item in _items("shifts", 500) if item.get("data", {}).get("name", "").lower() == payload.shift.strip().lower()), None)
+    if not shift:
+        raise HTTPException(status_code=404, detail="Shift not found.")
+    shift_data = shift.get("data", {})
+    planned_start = _optional_hhmm(payload.planned_start_time, shift_data.get("start_time", "09:00"), "planned_start_time")
+    planned_end = _optional_hhmm(payload.planned_end_time, shift_data.get("end_time", "18:00"), "planned_end_time")
+    duplicate = next(
+        (
+            item for item in _records_for_employee("shift_rosters", payload.employee_code.strip(), 500)
+            if item.get("data", {}).get("roster_date") == payload.roster_date.strip()
+            and (item.get("data", {}).get("status") or item.get("status")) == "Active"
+        ),
+        None,
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Active roster already exists for this employee and date.")
+    item = storage.create_record("shift_rosters", {
+        "roster_id": _new_ref("ROST"),
+        "employee_code": payload.employee_code.strip(),
+        "shift": payload.shift.strip(),
+        "roster_date": payload.roster_date.strip(),
+        "location_id": _clean_text(payload.location_id),
+        "planned_start_time": planned_start,
+        "planned_end_time": planned_end,
+        "roster_type": payload.roster_type.strip() or "Regular",
+        "published_status": payload.published_status.strip() or "Published",
+        "approval_status": payload.approval_status.strip() or "Approved",
+        "status": payload.status.strip() or "Active",
+    })
+    _write_audit(email, "publish_shift_roster", "shift_rosters", item.get("id", ""), item.get("data", {}), "HR published employee shift roster.")
+    _notify_employee(payload.employee_code.strip(), "shift_changed", "Shift roster published", f"{payload.roster_date}: {payload.shift.strip()} {planned_start}-{planned_end}.", payload.employee_code.strip())
     return {"item": item, "dashboard": _hr_settings_dashboard()}
 
 @app.get("/api/v1/hr/attendance-dashboard")
