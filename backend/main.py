@@ -2785,6 +2785,155 @@ def _run_payroll_preparation_job(actor: str, dry_run: bool):
         "ready_for_payroll": not attendance_exceptions and not missing_salary,
     }
 
+def _shift_late_after(shift_data: dict[str, Any], policy: dict[str, str]) -> str:
+    late_after = shift_data.get("start_time") or _late_after_time(policy)
+    if shift_data.get("late_mark_after_minutes"):
+        try:
+            base = datetime.strptime(shift_data.get("start_time", late_after), "%H:%M")
+            late_after = (base + timedelta(minutes=int(float(shift_data.get("late_mark_after_minutes", "0"))))).strftime("%H:%M")
+        except Exception:
+            late_after = _late_after_time(policy)
+    return _validate_hhmm(late_after, "late_after_time") if late_after else _late_after_time(policy)
+
+def _run_attendance_finalization_job(actor: str, dry_run: bool):
+    policy = _attendance_policy()
+    affected = []
+    for item in _items("attendance_records", 1000):
+        data = item.get("data", {})
+        if not data.get("day_in_time") or not data.get("day_out_time"):
+            continue
+        if data.get("payroll_status") in {"Ready", "Locked", "Paid"} and data.get("attendance_status") in {"Present", "Late", "Early Exit", "Overtime"}:
+            continue
+        shift_data = (_active_shift_for_employee(data.get("employee_code", ""), data.get("attendance_date", "")).get("shift") or {}).get("data", {})
+        gross = _minutes_between(data.get("day_in_time"), data.get("day_out_time"))
+        break_minutes = int(_money(shift_data.get("break_minutes"), _money(data.get("break_duration", 0))))
+        if str(shift_data.get("auto_break_deduction", "")).lower() not in {"yes", "true", "1"}:
+            break_minutes = int(_money(data.get("break_duration", 0)))
+        net = max(gross - break_minutes, 0)
+        full_day = int(_money(shift_data.get("minimum_full_day_minutes"), 480))
+        half_day = int(_money(shift_data.get("minimum_half_day_minutes"), 240))
+        late_after = _shift_late_after(shift_data, policy)
+        late_minutes = max(_minutes_between(late_after, data.get("day_in_time", "")), 0) if data.get("day_in_time", "") > late_after else 0
+        end_time = shift_data.get("end_time") or ""
+        early_grace = int(_money(shift_data.get("early_exit_grace_minutes"), 0))
+        early_exit = 0
+        if end_time and data.get("day_out_time", ""):
+            expected_minutes = _minutes_between(data.get("day_out_time", ""), end_time)
+            early_exit = max(expected_minutes - early_grace, 0) if data.get("day_out_time", "") < end_time else 0
+        overtime = max(net - full_day, 0) if str(shift_data.get("overtime_eligible", "")).lower() in {"yes", "true", "1"} else 0
+        if net < half_day:
+            status = "Half Day"
+        elif late_minutes > 0:
+            status = "Late"
+        elif early_exit > 0:
+            status = "Early Exit"
+        elif overtime > 0:
+            status = "Overtime"
+        else:
+            status = "Present"
+        update_payload = {
+            "gross_work_minutes": str(gross),
+            "net_work_minutes": str(net),
+            "late_duration_minutes": str(late_minutes),
+            "early_exit_minutes": str(early_exit),
+            "overtime_minutes": str(overtime),
+            "attendance_status": status,
+            "payroll_status": "Ready",
+            "approval_status": data.get("approval_status") or "Approved",
+            "hr_remarks": "Finalized by attendance status background job.",
+            "status": status,
+        }
+        affected.append({"record": _attendance_row_summary(item), "update": update_payload})
+        if not dry_run:
+            storage.update_record("attendance_records", item.get("id", ""), update_payload)
+    return {"affected": len(affected), "records": affected[:50]}
+
+def _run_leave_expiry_job(actor: str, dry_run: bool):
+    payload = LeaveAccrualRunRequest(period=date.today().strftime("%Y"), run_type="Expiry", dry_run=dry_run)
+    result = _run_leave_accrual(payload, actor)
+    return {"affected": len(result.get("expired", [])), "expired": result.get("expired", [])[:50]}
+
+def _run_leave_accrual_job(actor: str, dry_run: bool):
+    period = date.today().strftime("%Y-%m")
+    employees = _employees_for_leave_run()
+    policies = _active_leave_policies()
+    if not employees or not policies:
+        return {"affected": 0, "employees": len(employees), "policies": len(policies), "created": [], "skipped": [{"reason": "no_active_employees_or_policies"}]}
+    payload = LeaveAccrualRunRequest(period=period, target_period=period, run_type="Accrual", dry_run=dry_run)
+    result = _run_leave_accrual(payload, actor)
+    return {"affected": len(result.get("created", [])), "created": result.get("created", [])[:50], "skipped": result.get("skipped", [])[:50]}
+
+def _run_temporary_location_expiry_job(actor: str, dry_run: bool):
+    today = _today()
+    affected = []
+    for item in _items("employee_location_assignments", 1000):
+        data = item.get("data", {})
+        assignment_type = str(data.get("assignment_type", "")).lower()
+        expiry = data.get("effective_end_date", "")
+        active = (data.get("status") or item.get("status")) == "Active"
+        if active and expiry and expiry < today and any(token in assignment_type for token in ["temporary", "project", "date-specific"]):
+            affected.append(item)
+    if not dry_run:
+        for item in affected:
+            data = item.get("data", {})
+            storage.update_record("employee_location_assignments", item.get("id", ""), {
+                "status": "Expired",
+                "approval_status": "Expired",
+            })
+            _notify_employee(data.get("employee_code", ""), "work_location_expired", "Temporary location expired", f"{data.get('location_id', 'Assigned location')} expired on {data.get('effective_end_date', '')}.", actor)
+    return {"affected": len(affected), "assignments": [item.get("data", {}) for item in affected[:50]]}
+
+def _run_device_risk_analysis_job(actor: str, dry_run: bool):
+    risk_events = [
+        item for item in _items("device_integrity_events", 1000)
+        if _money(item.get("data", {}).get("risk_score")) >= 60 or item.get("status") == "Failed"
+    ]
+    registrations = _items("device_registrations", 1000)
+    by_device: dict[str, set[str]] = {}
+    for item in registrations:
+        data = item.get("data", {})
+        device_id = data.get("device_id", "")
+        employee_code = data.get("employee_code", "")
+        if device_id and employee_code:
+            by_device.setdefault(device_id, set()).add(employee_code)
+    shared_devices = {device_id: sorted(employees) for device_id, employees in by_device.items() if len(employees) > 1}
+    affected_ids = {
+        event.get("data", {}).get("device_id", "")
+        for event in risk_events
+        if event.get("data", {}).get("device_id")
+    } | set(shared_devices)
+    affected = [item for item in registrations if item.get("data", {}).get("device_id") in affected_ids]
+    if not dry_run:
+        for item in affected:
+            data = item.get("data", {})
+            storage.update_record("device_registrations", item.get("id", ""), {
+                "approval_status": "Review Required",
+                "status": "Under Review",
+            })
+            _notify_employee(data.get("employee_code", ""), "device_risk_review", "Device review required", "Your registered attendance device requires HR review before further restricted-device use.", actor)
+    return {
+        "affected": len(affected),
+        "high_risk_events": len(risk_events),
+        "shared_devices": shared_devices,
+        "devices": [item.get("data", {}) for item in affected[:50]],
+    }
+
+def _run_payroll_preparation_notifications_job(actor: str, dry_run: bool):
+    readiness = _run_payroll_preparation_job(actor, True)
+    missing_salary = readiness.get("missing_salary_assignments", [])
+    exceptions = readiness.get("attendance_exceptions", [])
+    if not dry_run:
+        for employee_code in missing_salary[:100]:
+            _notify_employee(employee_code, "salary_assignment_missing", "Salary setup pending", "Your salary assignment is pending finance setup before payroll can be processed.", actor)
+        for row in exceptions[:100]:
+            _notify_employee(row.get("employee_code", ""), "payroll_attendance_exception", "Attendance exception before payroll", f"{row.get('attendance_date', 'Attendance')} requires HR review before payroll.", actor)
+    return {
+        "affected": len(missing_salary) + len(exceptions),
+        "missing_salary_assignments": missing_salary[:50],
+        "attendance_exceptions": exceptions[:50],
+        "ready_for_payroll": readiness.get("ready_for_payroll", False),
+    }
+
 def _operations_dashboard():
     jobs = _items("automation_jobs", 200)
     notifications = _items("notifications", 500)
@@ -2808,8 +2957,14 @@ def _operations_dashboard():
         "available_jobs": [
             {"job_type": "missing_day_out_detection", "title": "Missing Day Out Detection", "description": "Find active Day In records without Day Out and send employee notifications."},
             {"job_type": "late_mark_finalization", "title": "Late Mark Finalization", "description": "Apply HR policy late marks from backend attendance records."},
+            {"job_type": "attendance_status_finalization", "title": "Attendance Status Finalization", "description": "Calculate working minutes, late, early-exit, overtime, and payroll readiness from shift rules."},
+            {"job_type": "leave_accrual", "title": "Leave Accrual", "description": "Apply active leave policies to active employees for the current period without duplicate allocations."},
+            {"job_type": "leave_expiry", "title": "Leave Expiry", "description": "Expire leave allocations whose configured expiry date has passed."},
+            {"job_type": "temporary_location_expiry", "title": "Temporary Location Expiry", "description": "Expire temporary, project, and date-specific location assignments past their end date."},
+            {"job_type": "device_risk_analysis", "title": "Device Risk Analysis", "description": "Mark high-risk or shared attendance devices for HR review and notify affected employees."},
             {"job_type": "notification_delivery", "title": "Notification Delivery", "description": "Finalize in-app notification delivery status for open notifications."},
             {"job_type": "payroll_preparation", "title": "Payroll Preparation", "description": "Check attendance exceptions and missing salary assignments before payroll."},
+            {"job_type": "payroll_preparation_notifications", "title": "Payroll Preparation Notifications", "description": "Notify employees about attendance or salary setup blockers before payroll processing."},
         ],
         "attendance_exceptions": {
             "missing_day_out": attendance["missing_day_out"][:50],
@@ -2825,8 +2980,14 @@ def _run_operations_job(job_type: str, actor: str, dry_run: bool = False):
     runners = {
         "missing_day_out_detection": _run_missing_day_out_job,
         "late_mark_finalization": _run_late_mark_job,
+        "attendance_status_finalization": _run_attendance_finalization_job,
+        "leave_accrual": _run_leave_accrual_job,
+        "leave_expiry": _run_leave_expiry_job,
+        "temporary_location_expiry": _run_temporary_location_expiry_job,
+        "device_risk_analysis": _run_device_risk_analysis_job,
         "notification_delivery": _run_notification_delivery_job,
         "payroll_preparation": _run_payroll_preparation_job,
+        "payroll_preparation_notifications": _run_payroll_preparation_notifications_job,
     }
     if normalized not in runners:
         raise HTTPException(status_code=422, detail=f"job_type must be one of: {', '.join(sorted(runners))}")
