@@ -1,0 +1,9 @@
+# Keep real local secrets out of Git.
+github
+all_details
+*.secret
+*.secret.*
+credentials.local.md
+.env
+.env.*
+
