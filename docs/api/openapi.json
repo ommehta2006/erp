@@ -2280,6 +2280,104 @@
         }
       }
     },
+    "/api/v1/finance/settings-dashboard": {
+      "get": {
+        "summary": "V1 Finance Settings Dashboard",
+        "operationId": "v1_finance_settings_dashboard_api_v1_finance_settings_dashboard_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/finance/payroll-policy": {
+      "post": {
+        "summary": "V1 Finance Save Payroll Policy",
+        "operationId": "v1_finance_save_payroll_policy_api_v1_finance_payroll_policy_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PayrollPolicyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/finance/adjustments-dashboard": {
       "get": {
         "summary": "V1 Finance Adjustments Dashboard",
@@ -5140,6 +5238,128 @@
           "end_date"
         ],
         "title": "PayrollGenerateRequest"
+      },
+      "PayrollPolicyRequest": {
+        "properties": {
+          "policy_name": {
+            "type": "string",
+            "title": "Policy Name",
+            "default": "Default Payroll Policy"
+          },
+          "proration_method": {
+            "type": "string",
+            "title": "Proration Method",
+            "default": "Calendar Day"
+          },
+          "fixed_divisor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed Divisor"
+          },
+          "rounding_rule": {
+            "type": "string",
+            "title": "Rounding Rule",
+            "default": "Round 2 Decimals"
+          },
+          "max_adjustment_amount": {
+            "type": "number",
+            "title": "Max Adjustment Amount",
+            "default": 50000
+          },
+          "role_adjustment_limits": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Adjustment Limits"
+          },
+          "retroactive_months_allowed": {
+            "type": "integer",
+            "title": "Retroactive Months Allowed",
+            "default": 2
+          },
+          "approval_required": {
+            "type": "boolean",
+            "title": "Approval Required",
+            "default": true
+          },
+          "lock_after_approval": {
+            "type": "boolean",
+            "title": "Lock After Approval",
+            "default": true
+          },
+          "allow_reversal_after_lock": {
+            "type": "boolean",
+            "title": "Allow Reversal After Lock",
+            "default": true
+          },
+          "adjustment_categories": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adjustment Categories"
+          },
+          "statutory_notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statutory Notes"
+          },
+          "effective_start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Start Date"
+          },
+          "effective_end_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective End Date"
+          },
+          "approval_status": {
+            "type": "string",
+            "title": "Approval Status",
+            "default": "Approved"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "Active"
+          }
+        },
+        "type": "object",
+        "title": "PayrollPolicyRequest"
       },
       "PayrollRunDecisionRequest": {
         "properties": {

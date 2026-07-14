@@ -262,6 +262,24 @@ class PayrollRunDecisionRequest(BaseModel):
     decision: str
     remarks: str | None = None
 
+class PayrollPolicyRequest(BaseModel):
+    policy_name: str = "Default Payroll Policy"
+    proration_method: str = "Calendar Day"
+    fixed_divisor: float | None = None
+    rounding_rule: str = "Round 2 Decimals"
+    max_adjustment_amount: float = 50000
+    role_adjustment_limits: str | None = None
+    retroactive_months_allowed: int = 2
+    approval_required: bool = True
+    lock_after_approval: bool = True
+    allow_reversal_after_lock: bool = True
+    adjustment_categories: str | None = None
+    statutory_notes: str | None = None
+    effective_start_date: str | None = None
+    effective_end_date: str | None = None
+    approval_status: str = "Approved"
+    status: str = "Active"
+
 class AdminUserCreateRequest(BaseModel):
     email: str
     password: str
@@ -1861,6 +1879,188 @@ PAYROLL_ADJUSTMENT_TYPES = {
 }
 PAYROLL_LOCKED_STATUSES = {"Approved", "Locked", "Payment Processing", "Paid", "Partially Paid"}
 FINANCE_ADJUSTMENT_LIMIT = float(os.getenv("FINANCE_ADJUSTMENT_LIMIT", "50000"))
+PAYROLL_PRORATION_METHODS = {"Calendar Day", "Working Day", "Fixed Divisor", "Organization Specific Formula"}
+
+def _csv_values(value: str | None) -> list[str]:
+    if not value:
+        return []
+    try:
+        raw = json.loads(value)
+        if isinstance(raw, list):
+            return [str(item).strip() for item in raw if str(item).strip()]
+    except Exception:
+        pass
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+def _active_payroll_policy():
+    rows = _items("payroll_policies", 100)
+    active = [
+        item for item in rows
+        if (item.get("data", {}).get("status") or item.get("status")) == "Active"
+        and (item.get("data", {}).get("approval_status") or "Approved") == "Approved"
+    ]
+    if active:
+        return active[0]
+    categories = sorted(PAYROLL_ADJUSTMENT_TYPES - {"Reversal"})
+    return {
+        "id": "default",
+        "status": "Active",
+        "data": {
+            "policy_id": "DEFAULT-PAYROLL-POLICY",
+            "policy_name": "Default Payroll Policy",
+            "proration_method": "Calendar Day",
+            "fixed_divisor": "",
+            "rounding_rule": "Round 2 Decimals",
+            "max_adjustment_amount": f"{FINANCE_ADJUSTMENT_LIMIT:.2f}",
+            "role_adjustment_limits": "",
+            "retroactive_months_allowed": "2",
+            "approval_required": "true",
+            "lock_after_approval": "true",
+            "allow_reversal_after_lock": "true",
+            "adjustment_categories": ", ".join(categories),
+            "statutory_notes": "Default policy generated from environment configuration.",
+            "effective_start_date": "",
+            "effective_end_date": "",
+            "created_by": "system",
+            "updated_by": "system",
+            "approval_status": "Approved",
+            "status": "Active",
+        },
+    }
+
+def _payroll_policy_categories(policy: dict[str, Any] | None = None):
+    data = (policy or _active_payroll_policy()).get("data", {})
+    categories = _csv_values(data.get("adjustment_categories"))
+    return categories or sorted(PAYROLL_ADJUSTMENT_TYPES - {"Reversal"})
+
+def _payroll_adjustment_limit(policy: dict[str, Any] | None = None):
+    data = (policy or _active_payroll_policy()).get("data", {})
+    return _money(data.get("max_adjustment_amount"), FINANCE_ADJUSTMENT_LIMIT) or FINANCE_ADJUSTMENT_LIMIT
+
+def _bool_setting(value: Any, default: bool = True) -> bool:
+    if value in (None, ""):
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+def _role_adjustment_limit(policy: dict[str, Any], actor: str):
+    data = policy.get("data", {})
+    base_limit = _payroll_adjustment_limit(policy)
+    role_limits = data.get("role_adjustment_limits", "")
+    if not role_limits:
+        return base_limit
+    try:
+        parsed = json.loads(role_limits)
+    except Exception:
+        return base_limit
+    role = _user_context(actor).get("role", "")
+    try:
+        role_limit = float(parsed.get(role, base_limit))
+    except (TypeError, ValueError, AttributeError):
+        role_limit = base_limit
+    return min(base_limit, role_limit) if role_limit > 0 else base_limit
+
+def _month_distance_from_current(period: str):
+    try:
+        year, month = [int(part) for part in period[:7].split("-", 1)]
+    except Exception:
+        return 0
+    today = date.today()
+    return (today.year - year) * 12 + (today.month - month)
+
+def _enforce_retroactive_adjustment_rule(policy: dict[str, Any], payroll_month: str):
+    allowed = int(_money(policy.get("data", {}).get("retroactive_months_allowed"), 0))
+    distance = _month_distance_from_current(payroll_month)
+    if distance > allowed:
+        raise HTTPException(status_code=422, detail=f"Retroactive adjustments are limited to {allowed} month(s) by payroll policy.")
+
+def _working_days_between(start: date, end: date):
+    days = 0
+    cursor = start
+    while cursor <= end:
+        if cursor.weekday() < 5:
+            days += 1
+        cursor += timedelta(days=1)
+    return max(days, 1)
+
+def _payroll_divisor(policy: dict[str, Any], start: date, end: date, total_days: int):
+    data = policy.get("data", {})
+    method = data.get("proration_method") or "Calendar Day"
+    if method == "Working Day":
+        return _working_days_between(start, end), "working_days"
+    if method == "Fixed Divisor":
+        return max(_money(data.get("fixed_divisor"), total_days), 1), "fixed_divisor"
+    if method == "Organization Specific Formula":
+        divisor = _money(data.get("fixed_divisor"), total_days) or total_days
+        return max(divisor, 1), "organization_specific_formula"
+    return total_days, "calendar_days"
+
+def _payroll_policy_dashboard():
+    policies = _items("payroll_policies", 100)
+    active = _active_payroll_policy()
+    data = active.get("data", {})
+    adjustments = _items("payroll_adjustments", 500)
+    runs = _items("payroll_runs", 250)
+    locked_runs = [item for item in runs if (item.get("data", {}).get("approval_status") or item.get("status")) in PAYROLL_LOCKED_STATUSES]
+    return {
+        "active_policy": data,
+        "policies": policies[:50],
+        "stats": {
+            "policies": len(policies),
+            "active_policies": len([item for item in policies if (item.get("data", {}).get("status") or item.get("status")) == "Active"]),
+            "adjustments": len(adjustments),
+            "locked_runs": len(locked_runs),
+            "max_adjustment_amount": _payroll_adjustment_limit(active),
+            "retroactive_months_allowed": int(_money(data.get("retroactive_months_allowed"), 0)),
+        },
+        "allowed_proration_methods": sorted(PAYROLL_PRORATION_METHODS),
+        "default_adjustment_categories": sorted(PAYROLL_ADJUSTMENT_TYPES - {"Reversal"}),
+    }
+
+def _save_payroll_policy(payload: PayrollPolicyRequest, actor: str):
+    method = payload.proration_method.strip()
+    if method not in PAYROLL_PRORATION_METHODS:
+        raise HTTPException(status_code=422, detail=f"proration_method must be one of: {', '.join(sorted(PAYROLL_PRORATION_METHODS))}")
+    if payload.max_adjustment_amount <= 0:
+        raise HTTPException(status_code=422, detail="max_adjustment_amount must be greater than zero.")
+    if method == "Fixed Divisor" and (payload.fixed_divisor is None or payload.fixed_divisor <= 0):
+        raise HTTPException(status_code=422, detail="fixed_divisor is required for Fixed Divisor proration.")
+    if payload.retroactive_months_allowed < 0:
+        raise HTTPException(status_code=422, detail="retroactive_months_allowed cannot be negative.")
+    categories = _csv_values(payload.adjustment_categories) or sorted(PAYROLL_ADJUSTMENT_TYPES - {"Reversal"})
+    invalid_categories = sorted(set(categories) - (PAYROLL_ADJUSTMENT_TYPES - {"Reversal"}))
+    if invalid_categories:
+        raise HTTPException(status_code=422, detail=f"Unsupported adjustment categories: {', '.join(invalid_categories)}")
+    now = _now_iso()
+    for item in _items("payroll_policies", 100):
+        data = item.get("data", {})
+        if (data.get("status") or item.get("status")) == "Active":
+            storage.update_record("payroll_policies", item.get("id", ""), {
+                "status": "Inactive",
+                "updated_by": actor,
+            })
+    item = storage.create_record("payroll_policies", {
+        "policy_id": _new_ref("PPOL"),
+        "policy_name": payload.policy_name.strip() or "Payroll Policy",
+        "proration_method": method,
+        "fixed_divisor": f"{payload.fixed_divisor:.2f}" if payload.fixed_divisor is not None else "",
+        "rounding_rule": payload.rounding_rule.strip() or "Round 2 Decimals",
+        "max_adjustment_amount": f"{payload.max_adjustment_amount:.2f}",
+        "role_adjustment_limits": _clean_text(payload.role_adjustment_limits),
+        "retroactive_months_allowed": str(payload.retroactive_months_allowed),
+        "approval_required": "true" if payload.approval_required else "false",
+        "lock_after_approval": "true" if payload.lock_after_approval else "false",
+        "allow_reversal_after_lock": "true" if payload.allow_reversal_after_lock else "false",
+        "adjustment_categories": ", ".join(categories),
+        "statutory_notes": _clean_text(payload.statutory_notes),
+        "effective_start_date": _clean_text(payload.effective_start_date),
+        "effective_end_date": _clean_text(payload.effective_end_date),
+        "created_by": actor,
+        "updated_by": actor,
+        "approval_status": payload.approval_status.strip() or "Approved",
+        "status": payload.status.strip() or "Active",
+    })
+    _write_audit(actor, "save_payroll_policy", "payroll_policies", item.get("data", {}).get("policy_id", item.get("id", "")), item.get("data", {}), "Finance payroll policy updated.")
+    return {"item": item, "dashboard": _payroll_policy_dashboard()}
 
 def _payroll_period_locked(period: str) -> dict[str, Any] | None:
     normalized = period.strip().lower()
@@ -1892,6 +2092,7 @@ def _adjustment_duplicate_key(employee_code: str, payroll_month: str, adjustment
     return hashlib.sha256("|".join(bits).encode()).hexdigest()
 
 def _adjustment_dashboard():
+    policy = _active_payroll_policy()
     rows = _items("payroll_adjustments", 1000)
     runs = _items("payroll_runs", 250)
     pending = [item for item in rows if (item.get("data", {}).get("approval_status") or item.get("status")) in {"Pending Approval", "Pending", "Draft", "Open"}]
@@ -1912,11 +2113,12 @@ def _adjustment_dashboard():
             "net_adjustment": round(additions - deductions, 2),
             "payroll_runs": len(runs),
         },
-        "limit": FINANCE_ADJUSTMENT_LIMIT,
+        "limit": _payroll_adjustment_limit(policy),
+        "policy": policy.get("data", {}),
         "pending": pending[:100],
         "recent": rows[:100],
         "payroll_runs": runs[:50],
-        "allowed_types": sorted(PAYROLL_ADJUSTMENT_TYPES - {"Reversal"}),
+        "allowed_types": _payroll_policy_categories(policy),
         "allowed_directions": ["Addition", "Deduction"],
     }
 
@@ -1928,16 +2130,19 @@ def _create_payroll_adjustment(payload: PayrollAdjustmentRequest, actor: str):
     reason = payload.reason.strip()
     policy_reference = payload.policy_reference.strip()
     amount = round(float(payload.amount), 2)
+    policy = _active_payroll_policy()
+    allowed_categories = set(_payroll_policy_categories(policy))
+    adjustment_limit = _role_adjustment_limit(policy, actor)
     if not employee_code or not payroll_month:
         raise HTTPException(status_code=422, detail="employee_code and payroll_month are required.")
-    if adjustment_type not in PAYROLL_ADJUSTMENT_TYPES - {"Reversal"}:
-        raise HTTPException(status_code=422, detail=f"adjustment_type must be one of: {', '.join(sorted(PAYROLL_ADJUSTMENT_TYPES - {'Reversal'}))}")
+    if adjustment_type not in allowed_categories:
+        raise HTTPException(status_code=422, detail=f"adjustment_type must be one of: {', '.join(sorted(allowed_categories))}")
     if direction not in {"Addition", "Deduction"}:
         raise HTTPException(status_code=422, detail="addition_or_deduction must be Addition or Deduction.")
     if amount <= 0:
         raise HTTPException(status_code=422, detail="amount must be greater than zero.")
-    if amount > FINANCE_ADJUSTMENT_LIMIT:
-        raise HTTPException(status_code=422, detail=f"amount exceeds configured adjustment limit {FINANCE_ADJUSTMENT_LIMIT:.2f}.")
+    if amount > adjustment_limit:
+        raise HTTPException(status_code=422, detail=f"amount exceeds configured adjustment limit {adjustment_limit:.2f}.")
     if len(reason) < 8:
         raise HTTPException(status_code=422, detail="reason must explain the adjustment.")
     if len(policy_reference) < 3:
@@ -1945,6 +2150,7 @@ def _create_payroll_adjustment(payload: PayrollAdjustmentRequest, actor: str):
     locked = _payroll_period_locked(payroll_month)
     if locked:
         raise HTTPException(status_code=409, detail=f"Payroll period {payroll_month} is locked or approved. Use reversal/supplementary process.")
+    _enforce_retroactive_adjustment_rule(policy, payroll_month)
     duplicate_key = _adjustment_duplicate_key(employee_code, payroll_month, adjustment_type, amount, direction)
     for item in _items("payroll_adjustments", 1000):
         data = item.get("data", {})
@@ -1970,7 +2176,7 @@ def _create_payroll_adjustment(payload: PayrollAdjustmentRequest, actor: str):
         "rejected_by": "",
         "approval_remarks": "",
         "payroll_inclusion_status": "Pending Approval",
-        "limit_check": f"within_limit:{FINANCE_ADJUSTMENT_LIMIT:.2f}",
+        "limit_check": f"within_role_limit:{adjustment_limit:.2f}",
         "duplicate_key": duplicate_key,
         "reversal_of": "",
         "created_time": now,
@@ -1989,6 +2195,7 @@ def _decide_payroll_adjustment(payload: PayrollAdjustmentDecisionRequest, actor:
     decision = payload.decision.strip().title()
     remarks = (payload.remarks or "").strip()
     current_status = data.get("approval_status") or item.get("status")
+    policy = _active_payroll_policy()
     if current_status in {"Reversed", "Cancelled"}:
         raise HTTPException(status_code=409, detail=f"Adjustment is already {current_status}.")
     if _payroll_period_locked(data.get("payroll_month", "")) and decision != "Reversed":
@@ -2014,6 +2221,8 @@ def _decide_payroll_adjustment(payload: PayrollAdjustmentDecisionRequest, actor:
     else:
         if current_status != "Approved":
             raise HTTPException(status_code=409, detail="Only approved adjustments can be reversed.")
+        if _payroll_period_locked(data.get("payroll_month", "")) and not _bool_setting(policy.get("data", {}).get("allow_reversal_after_lock"), True):
+            raise HTTPException(status_code=409, detail="Payroll policy does not allow reversal after payroll lock.")
         reversed_direction = "Deduction" if data.get("addition_or_deduction") == "Addition" else "Addition"
         reversal = storage.create_record("payroll_adjustments", {
             "adjustment_id": _new_ref("PADJ"),
@@ -2072,20 +2281,22 @@ def _decide_payroll_run(payload: PayrollRunDecisionRequest, actor: str):
     decision = payload.decision.strip().title()
     if decision not in {"Approved", "Locked", "Payment Processing", "Paid", "Cancelled", "Reversed"}:
         raise HTTPException(status_code=422, detail="decision must be Approved, Locked, Payment Processing, Paid, Cancelled, or Reversed.")
+    policy = _active_payroll_policy()
+    stored_decision = "Locked" if decision == "Approved" and _bool_setting(policy.get("data", {}).get("lock_after_approval"), True) else decision
     updated = storage.update_record("payroll_runs", run.get("id", ""), {
-        "approval_status": decision,
-        "status": decision,
+        "approval_status": stored_decision,
+        "status": stored_decision,
     })
     storage.create_record("payroll_approvals", {
         "approval_id": _new_ref("PAPP"),
         "payroll_run": run.get("data", {}).get("run_no", run.get("id", "")),
         "approver": actor,
-        "decision": decision,
+        "decision": stored_decision,
         "remarks": payload.remarks or "",
         "decided_at": _now_iso(),
-        "status": decision,
+        "status": stored_decision,
     })
-    _write_audit(actor, f"{decision.lower().replace(' ', '_')}_payroll_run", "payroll_runs", run.get("data", {}).get("run_no", run.get("id", "")), updated.get("data", {}), payload.remarks or decision)
+    _write_audit(actor, f"{stored_decision.lower().replace(' ', '_')}_payroll_run", "payroll_runs", run.get("data", {}).get("run_no", run.get("id", "")), updated.get("data", {}), payload.remarks or stored_decision)
     return {"item": updated, "dashboard": v1_finance_payroll_dashboard(actor)}
 
 def _payroll_calculation(payload: PayrollGenerateRequest, actor: str):
@@ -2094,6 +2305,8 @@ def _payroll_calculation(payload: PayrollGenerateRequest, actor: str):
     if end < start:
         raise HTTPException(status_code=422, detail="end_date must be on or after start_date")
     total_days = max((end - start).days + 1, 1)
+    payroll_policy = _active_payroll_policy()
+    divisor, divisor_source = _payroll_divisor(payroll_policy, start, end, total_days)
     period_id = payload.period_id or payload.period_name.replace(" ", "-").upper()
     run_no = _new_ref("PAY")
     employees = _items("employees")
@@ -2178,8 +2391,9 @@ def _payroll_calculation(payload: PayrollGenerateRequest, actor: str):
                 additions += amount
             adjustment_lines.append(data)
         present_days = len([day for day in present_dates if day])
-        paid_days = min(total_days, present_days + paid_leave_days)
-        prorated_gross = round(monthly_gross * (paid_days / total_days), 2)
+        paid_days = min(float(divisor), present_days + paid_leave_days)
+        daily_rate = monthly_gross / float(divisor or total_days)
+        prorated_gross = round(monthly_gross * (paid_days / float(divisor or total_days)), 2)
         net_pay = round(prorated_gross + additions - deductions, 2)
         result_id = _new_ref("PER")
         result = {
@@ -2196,7 +2410,7 @@ def _payroll_calculation(payload: PayrollGenerateRequest, actor: str):
             "validation_status": "Valid",
             "status": "Draft",
             "lines": [
-                {"component_name": "Prorated Gross", "component_type": "Earning", "quantity": f"{paid_days:.2f}", "rate": f"{monthly_gross / total_days:.2f}", "amount": f"{prorated_gross:.2f}", "formula": "monthly_gross * paid_days / period_days", "source": "salary_assignment"},
+                {"component_name": "Prorated Gross", "component_type": "Earning", "quantity": f"{paid_days:.2f}", "rate": f"{daily_rate:.2f}", "amount": f"{prorated_gross:.2f}", "formula": f"monthly_gross * paid_days / {divisor_source}:{divisor}", "source": "salary_assignment"},
                 *[
                     {"component_name": line.get("adjustment_type", "Adjustment"), "component_type": line.get("addition_or_deduction", "Addition"), "quantity": line.get("quantity", "1"), "rate": line.get("rate", line.get("amount", "0")), "amount": line.get("amount", "0"), "formula": line.get("calculation_method", "manual"), "source": "payroll_adjustments"}
                     for line in adjustment_lines
@@ -2254,6 +2468,13 @@ def _payroll_calculation(payload: PayrollGenerateRequest, actor: str):
         "totals": totals,
         "results": results,
         "validation_errors": validation_errors,
+        "policy": {
+            "policy_id": payroll_policy.get("data", {}).get("policy_id", "DEFAULT-PAYROLL-POLICY"),
+            "policy_name": payroll_policy.get("data", {}).get("policy_name", "Default Payroll Policy"),
+            "proration_method": payroll_policy.get("data", {}).get("proration_method", "Calendar Day"),
+            "divisor": divisor,
+            "divisor_source": divisor_source,
+        },
     }
 
 def _persist_location_validation(employee_code: str, payload: LocationValidationRequest, validation: dict[str, Any], attendance_record_id: str = "pending"):
@@ -3134,7 +3355,18 @@ def v1_finance_payroll_dashboard(email: str = Depends(_verify)):
         "payroll_runs": runs[:20],
         "employee_results": results[:20],
         "adjustments": adjustments[:20],
+        "policy": _active_payroll_policy().get("data", {}),
     }
+
+@app.get("/api/v1/finance/settings-dashboard")
+def v1_finance_settings_dashboard(email: str = Depends(_verify)):
+    _require_permission(email, "finance:read")
+    return _payroll_policy_dashboard()
+
+@app.post("/api/v1/finance/payroll-policy")
+def v1_finance_save_payroll_policy(payload: PayrollPolicyRequest, email: str = Depends(_verify)):
+    _require_permission(email, "finance:write")
+    return _save_payroll_policy(payload, email)
 
 @app.get("/api/v1/finance/adjustments-dashboard")
 def v1_finance_adjustments_dashboard(email: str = Depends(_verify)):
