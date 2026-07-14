@@ -2325,6 +2325,16 @@
             }
           },
           {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "csv",
+              "title": "Format"
+            }
+          },
+          {
             "name": "authorization",
             "in": "header",
             "required": false,

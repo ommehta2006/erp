@@ -104,7 +104,7 @@ export default function ReportsPage() {
     }
   }
 
-  async function exportReport(reportId: string) {
+  async function exportReport(reportId: string, format: "csv" | "excel" = "csv") {
     const token = localStorage.getItem("factorypulse_token");
     if (!token) {
       router.push("/login");
@@ -112,16 +112,16 @@ export default function ReportsPage() {
     }
     setError("");
     try {
-      const response = await fetch(`${API_BASE}/api/v1/reports/${reportId}/export`, {
+      const response = await fetch(`${API_BASE}/api/v1/reports/${reportId}/export${format === "excel" ? "?format=excel" : ""}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) throw new Error("Export failed");
       const text = await response.text();
-      const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
+      const blob = new Blob([text], { type: format === "excel" ? "application/vnd.ms-excel;charset=utf-8" : "text/csv;charset=utf-8" });
       const href = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = href;
-      link.download = `${reportId}.csv`;
+      link.download = `${reportId}.${format === "excel" ? "xls" : "csv"}`;
       link.click();
       URL.revokeObjectURL(href);
     } catch (err) {
@@ -211,7 +211,11 @@ export default function ReportsPage() {
                 <p className="mt-1 text-sm text-slate-500">{detail?.description || "Open a report from the catalog."}</p>
               </div>
               {detail ? (
-                <button onClick={() => exportReport(detail.id)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold hover:border-teal-600">Export CSV</button>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => exportReport(detail.id, "csv")} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold hover:border-teal-600">Export CSV</button>
+                  <button onClick={() => exportReport(detail.id, "excel")} className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800 hover:border-sky-600">Export Excel</button>
+                  <button onClick={() => window.print()} className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800">Print</button>
+                </div>
               ) : null}
             </div>
 

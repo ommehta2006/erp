@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import hmac
+import html
 import json
 import math
 import os
@@ -2171,14 +2172,18 @@ def _attendance_row_summary(item: dict[str, Any]):
         "employee_name": data.get("employee_name") or employee_code,
         "department": data.get("department", ""),
         "designation": data.get("designation", ""),
+        "work_location": data.get("work_location", ""),
         "attendance_date": data.get("attendance_date", ""),
         "shift": data.get("shift", ""),
         "day_in_time": data.get("day_in_time", ""),
         "day_out_time": data.get("day_out_time", ""),
         "gross_work_minutes": data.get("gross_work_minutes") or str(_minutes_between(data.get("day_in_time"), data.get("day_out_time"))),
+        "net_work_minutes": data.get("net_work_minutes", ""),
+        "overtime_minutes": data.get("overtime_minutes", ""),
         "late_duration_minutes": data.get("late_duration_minutes", ""),
         "early_exit_minutes": data.get("early_exit_minutes", ""),
         "attendance_status": data.get("attendance_status") or item.get("status") or "Open",
+        "payroll_status": data.get("payroll_status", ""),
         "approval_status": data.get("approval_status") or item.get("status") or "Open",
         "geofence_status": geofence_status,
         "biometric_status": latest_biometric.get("verification_result") or data.get("day_in_biometric_result") or "Pending",
@@ -2280,12 +2285,58 @@ def _csv_from_rows(rows: list[dict[str, Any]], preferred_headers: list[str] | No
         lines.append(",".join(values))
     return "\n".join(lines) + "\n"
 
+def _excel_table_from_rows(rows: list[dict[str, Any]], title: str = "ERP Report"):
+    headers: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        for key in row:
+            if key not in seen and not isinstance(row.get(key), (dict, list)):
+                headers.append(key)
+                seen.add(key)
+    if not headers:
+        headers = ["message"]
+        rows = [{"message": "No data"}]
+    header_html = "".join(f"<th>{html.escape(str(header).replace('_', ' ').title())}</th>" for header in headers)
+    body_html = "".join(
+        "<tr>" + "".join(f"<td>{html.escape(str(row.get(header, '')))}</td>" for header in headers) + "</tr>"
+        for row in rows
+    )
+    return (
+        "<html><head><meta charset='utf-8'>"
+        "<style>table{border-collapse:collapse;font-family:Arial,sans-serif;font-size:12px}"
+        "th{background:#e2e8f0;text-align:left}td,th{border:1px solid #cbd5e1;padding:6px}</style>"
+        f"</head><body><h2>{html.escape(title)}</h2><table><thead><tr>{header_html}</tr></thead><tbody>{body_html}</tbody></table></body></html>"
+    )
+
 def _group_count(rows: list[dict[str, Any]], key: str):
     grouped: dict[str, int] = {}
     for row in rows:
         label = str(row.get(key) or "Unassigned")
         grouped[label] = grouped.get(label, 0) + 1
     return [{"label": label, "count": count} for label, count in sorted(grouped.items())]
+
+def _group_rows(rows: list[dict[str, Any]], key: str):
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        label = str(row.get(key) or "Unassigned")
+        grouped.setdefault(label, []).append(row)
+    return grouped
+
+def _attendance_month(value: Any):
+    text = str(value or "")
+    return text[:7] if len(text) >= 7 else "Unscheduled"
+
+def _attendance_paid_day(row: dict[str, Any]):
+    status = str(row.get("attendance_status") or row.get("status") or "").lower()
+    if status in {"absent", "rejected"}:
+        return 0.0
+    if status in {"half day", "half-day"}:
+        return 0.5
+    if status in {"paid leave", "holiday", "public holiday", "weekly off"}:
+        return 1.0
+    if row.get("day_in_time") or row.get("check_in"):
+        return 1.0
+    return 0.0
 
 def _report_sources():
     return {
@@ -2316,6 +2367,27 @@ def _report_rows(report_id: str, sources: dict[str, Any] | None = None):
 
     if report_id == "daily_attendance":
         return attendance
+    if report_id == "monthly_attendance":
+        grouped = _group_rows(attendance, "employee_code")
+        rows = []
+        for employee_code, employee_rows in grouped.items():
+            by_month = _group_rows(employee_rows, "attendance_month")
+            if "Unassigned" in by_month:
+                by_month = _group_rows([{**row, "attendance_month": _attendance_month(row.get("attendance_date"))} for row in employee_rows], "attendance_month")
+            for month, month_rows in by_month.items():
+                rows.append({
+                    "month": month,
+                    "employee_code": employee_code,
+                    "employee_name": month_rows[0].get("employee_name", ""),
+                    "department": month_rows[0].get("department", ""),
+                    "records": len(month_rows),
+                    "present": len([row for row in month_rows if _attendance_paid_day(row) >= 1]),
+                    "half_days": len([row for row in month_rows if _attendance_paid_day(row) == 0.5]),
+                    "absent": len([row for row in month_rows if _attendance_paid_day(row) == 0]),
+                    "late": len([row for row in month_rows if _money(row.get("late_duration_minutes")) > 0 or row.get("attendance_status") == "Late"]),
+                    "paid_days": round(sum(_attendance_paid_day(row) for row in month_rows), 2),
+                })
+        return sorted(rows, key=lambda row: (row.get("month", ""), row.get("employee_code", "")), reverse=True)
     if report_id == "department_attendance":
         return [
             {
@@ -2326,13 +2398,57 @@ def _report_rows(report_id: str, sources: dict[str, Any] | None = None):
             }
             for item in _group_count(attendance, "department")
         ]
+    if report_id == "location_attendance":
+        return [
+            {
+                "work_location": item["label"],
+                "records": item["count"],
+                "present": len([row for row in attendance if (row.get("work_location") or "Unassigned") == item["label"] and _attendance_paid_day(row) >= 1]),
+                "out_of_fence": len([row for row in attendance if (row.get("work_location") or "Unassigned") == item["label"] and row.get("geofence_status") in {"Outside Fence", "Out of Fence", "Accuracy Rejected"}]),
+                "missing_day_out": len([row for row in attendance if (row.get("work_location") or "Unassigned") == item["label"] and row.get("missing_day_out")]),
+            }
+            for item in _group_count(attendance, "work_location")
+        ]
+    if report_id == "shift_attendance":
+        return [
+            {
+                "shift": item["label"],
+                "records": item["count"],
+                "present": len([row for row in attendance if (row.get("shift") or "Unassigned") == item["label"] and _attendance_paid_day(row) >= 1]),
+                "late": len([row for row in attendance if (row.get("shift") or "Unassigned") == item["label"] and (_money(row.get("late_duration_minutes")) > 0 or row.get("attendance_status") == "Late")]),
+                "early_exit": len([row for row in attendance if (row.get("shift") or "Unassigned") == item["label"] and _money(row.get("early_exit_minutes")) > 0]),
+                "overtime": len([row for row in attendance if (row.get("shift") or "Unassigned") == item["label"] and _money(row.get("overtime_minutes")) > 0]),
+            }
+            for item in _group_count(attendance, "shift")
+        ]
     if report_id == "late_arrivals":
         return [
             row for row in attendance
             if _money(row.get("late_duration_minutes")) > 0 or row.get("attendance_status") == "Late"
         ]
+    if report_id == "early_exits":
+        return [row for row in attendance if _money(row.get("early_exit_minutes")) > 0 or row.get("attendance_status") == "Early Exit"]
     if report_id == "missing_day_out":
         return [row for row in attendance if row.get("missing_day_out")]
+    if report_id == "employee_working_hours":
+        return [
+            {
+                "employee_code": row.get("employee_code"),
+                "employee_name": row.get("employee_name"),
+                "attendance_date": row.get("attendance_date"),
+                "shift": row.get("shift"),
+                "day_in_time": row.get("day_in_time"),
+                "day_out_time": row.get("day_out_time"),
+                "gross_work_minutes": row.get("gross_work_minutes"),
+                "net_work_minutes": row.get("net_work_minutes"),
+                "overtime_minutes": row.get("overtime_minutes"),
+                "early_exit_minutes": row.get("early_exit_minutes"),
+                "attendance_status": row.get("attendance_status"),
+            }
+            for row in attendance
+        ]
+    if report_id == "overtime":
+        return [row for row in attendance if _money(row.get("overtime_minutes")) > 0 or row.get("attendance_status") == "Overtime"]
     if report_id == "out_of_fence":
         return [
             row for row in attendance
@@ -2345,8 +2461,26 @@ def _report_rows(report_id: str, sources: dict[str, Any] | None = None):
         ]
     if report_id == "leave_usage":
         return leave_dashboard["balances"]
+    if report_id == "leave_balance":
+        return leave_dashboard["balances"]
     if report_id == "holiday_impact":
         return leave_dashboard["holidays"]
+    if report_id == "paid_day_calculation":
+        return [
+            {
+                "employee_code": row.get("employee_code"),
+                "employee_name": row.get("employee_name"),
+                "attendance_date": row.get("attendance_date"),
+                "attendance_status": row.get("attendance_status"),
+                "payroll_status": row.get("payroll_status"),
+                "paid_day": _attendance_paid_day(row),
+                "paid_day_source": "attendance_status_and_day_in",
+                "late_duration_minutes": row.get("late_duration_minutes"),
+                "early_exit_minutes": row.get("early_exit_minutes"),
+                "net_work_minutes": row.get("net_work_minutes"),
+            }
+            for row in attendance
+        ]
     if report_id == "payroll_summary":
         return [
             {
@@ -2424,13 +2558,21 @@ def _report_rows(report_id: str, sources: dict[str, Any] | None = None):
 def _report_catalog():
     return [
         {"id": "daily_attendance", "title": "Daily Attendance", "domain": "Attendance", "description": "Employee day-in/day-out, approval, geofence, and biometric status."},
+        {"id": "monthly_attendance", "title": "Monthly Attendance", "domain": "Attendance", "description": "Employee monthly present, absent, late, half-day, and paid-day summary."},
         {"id": "department_attendance", "title": "Department Attendance", "domain": "Attendance", "description": "Attendance counts grouped by department."},
+        {"id": "location_attendance", "title": "Location Attendance", "domain": "Attendance", "description": "Attendance grouped by factory, office, site, or approved work location."},
+        {"id": "shift_attendance", "title": "Shift Attendance", "domain": "Attendance", "description": "Attendance grouped by shift with late, early-exit, and overtime counts."},
         {"id": "late_arrivals", "title": "Late Arrivals", "domain": "Attendance", "description": "Late employees and late-duration evidence."},
+        {"id": "early_exits", "title": "Early Exits", "domain": "Attendance", "description": "Employees leaving before the configured shift or HR grace window."},
         {"id": "missing_day_out", "title": "Missing Day Out", "domain": "Attendance", "description": "Employees checked in without a recorded day-out."},
+        {"id": "employee_working_hours", "title": "Employee Working Hours", "domain": "Attendance", "description": "Gross, net, overtime, and early-exit minutes per attendance record."},
+        {"id": "overtime", "title": "Overtime", "domain": "Attendance", "description": "Overtime records and minutes requiring review or payroll inclusion."},
         {"id": "out_of_fence", "title": "Out-of-Fence Attendance", "domain": "Geofence", "description": "Geofence exceptions and rejected location validation evidence."},
         {"id": "biometric_failures", "title": "Biometric Failures", "domain": "Attendance", "description": "Failed, locked, or unavailable biometric events."},
         {"id": "leave_usage", "title": "Leave Usage", "domain": "Leave", "description": "Allocated, used, and available leave balances."},
+        {"id": "leave_balance", "title": "Leave Balance", "domain": "Leave", "description": "Employee leave balance, allocation, used-days, and available-days report."},
         {"id": "holiday_impact", "title": "Holiday Impact", "domain": "Leave", "description": "Paid/unpaid holidays and payroll impact."},
+        {"id": "paid_day_calculation", "title": "Paid-Day Calculation", "domain": "Payroll", "description": "Attendance-derived paid-day evidence for payroll preparation."},
         {"id": "payroll_summary", "title": "Payroll Summary", "domain": "Payroll", "description": "Payroll runs or employee payroll result totals."},
         {"id": "payroll_variance", "title": "Payroll Variance", "domain": "Payroll", "description": "Net-pay spread by employee across generated payroll results."},
         {"id": "salary_adjustments", "title": "Salary Adjustments", "domain": "Finance", "description": "Approved and pending finance payroll adjustments."},
@@ -4958,9 +5100,18 @@ def v1_report_detail(report_id: str, email: str = Depends(_verify)):
     return {**meta, "row_count": len(rows), "rows": rows[:500]}
 
 @app.get("/api/v1/reports/{report_id}/export")
-def v1_report_export(report_id: str, email: str = Depends(_verify)):
+def v1_report_export(report_id: str, format: str = "csv", email: str = Depends(_verify)):
     _require_permission(email, "reports:read")
     rows = _report_rows(report_id)
+    if format.strip().lower() in {"excel", "xls"}:
+        catalog = {item["id"]: item for item in _report_catalog()}
+        title = catalog.get(report_id, {}).get("title", report_id.replace("_", " ").title())
+        table = _excel_table_from_rows(rows, title)
+        return Response(
+            content=table,
+            media_type="application/vnd.ms-excel",
+            headers={"Content-Disposition": f"attachment; filename={report_id}.xls"},
+        )
     csv = _csv_from_rows(rows)
     return Response(
         content=csv,
