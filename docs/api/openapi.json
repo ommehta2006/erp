@@ -3006,6 +3006,211 @@
         }
       }
     },
+    "/api/v1/finance/payment-dashboard": {
+      "get": {
+        "summary": "V1 Finance Payment Dashboard",
+        "operationId": "v1_finance_payment_dashboard_api_v1_finance_payment_dashboard_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/finance/payment-batches": {
+      "post": {
+        "summary": "V1 Create Payment Batch",
+        "operationId": "v1_create_payment_batch_api_v1_finance_payment_batches_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentBatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/finance/payment-batches/decision": {
+      "post": {
+        "summary": "V1 Decide Payment Batch",
+        "operationId": "v1_decide_payment_batch_api_v1_finance_payment_batches_decision_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentBatchDecisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/finance/payment-batches/{batch_id}/export": {
+      "get": {
+        "summary": "V1 Export Payment Batch",
+        "operationId": "v1_export_payment_batch_api_v1_finance_payment_batches__batch_id__export_get",
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Batch Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/payroll/generate": {
       "post": {
         "summary": "V1 Generate Payroll",
@@ -5789,6 +5994,74 @@
           "notification_id"
         ],
         "title": "NotificationReadRequest"
+      },
+      "PaymentBatchDecisionRequest": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "title": "Batch Id"
+          },
+          "decision": {
+            "type": "string",
+            "title": "Decision"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch_id",
+          "decision"
+        ],
+        "title": "PaymentBatchDecisionRequest"
+      },
+      "PaymentBatchRequest": {
+        "properties": {
+          "payroll_run": {
+            "type": "string",
+            "title": "Payroll Run"
+          },
+          "payment_date": {
+            "type": "string",
+            "title": "Payment Date"
+          },
+          "payment_method": {
+            "type": "string",
+            "title": "Payment Method",
+            "default": "Bank Transfer"
+          },
+          "bank_file_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bank File Reference"
+          },
+          "mark_salary_slips": {
+            "type": "boolean",
+            "title": "Mark Salary Slips",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "payroll_run",
+          "payment_date"
+        ],
+        "title": "PaymentBatchRequest"
       },
       "PayrollAdjustmentDecisionRequest": {
         "properties": {

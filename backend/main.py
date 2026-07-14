@@ -307,6 +307,18 @@ class PayrollRunDecisionRequest(BaseModel):
     decision: str
     remarks: str | None = None
 
+class PaymentBatchRequest(BaseModel):
+    payroll_run: str
+    payment_date: str
+    payment_method: str = "Bank Transfer"
+    bank_file_reference: str | None = None
+    mark_salary_slips: bool = True
+
+class PaymentBatchDecisionRequest(BaseModel):
+    batch_id: str
+    decision: str
+    remarks: str | None = None
+
 class PayrollPolicyRequest(BaseModel):
     policy_name: str = "Default Payroll Policy"
     proration_method: str = "Calendar Day"
@@ -2190,6 +2202,8 @@ PAYROLL_ADJUSTMENT_TYPES = {
     "Holiday Adjustment", "Correction", "Tax Adjustment", "Other Approved Adjustment", "Reversal",
 }
 PAYROLL_LOCKED_STATUSES = {"Approved", "Locked", "Payment Processing", "Paid", "Partially Paid"}
+PAYROLL_PAYMENT_READY_STATUSES = {"Approved", "Locked", "Payment Processing", "Partially Paid"}
+PAYROLL_PAYMENT_FINAL_STATUSES = {"Paid", "Cancelled", "Reversed"}
 FINANCE_ADJUSTMENT_LIMIT = float(os.getenv("FINANCE_ADJUSTMENT_LIMIT", "50000"))
 PAYROLL_PRORATION_METHODS = {"Calendar Day", "Working Day", "Fixed Divisor", "Organization Specific Formula"}
 
@@ -2610,6 +2624,212 @@ def _decide_payroll_run(payload: PayrollRunDecisionRequest, actor: str):
     })
     _write_audit(actor, f"{stored_decision.lower().replace(' ', '_')}_payroll_run", "payroll_runs", run.get("data", {}).get("run_no", run.get("id", "")), updated.get("data", {}), payload.remarks or stored_decision)
     return {"item": updated, "dashboard": v1_finance_payroll_dashboard(actor)}
+
+def _find_payroll_run(run_no: str):
+    normalized = run_no.strip().lower()
+    return next(
+        (
+            item for item in _items("payroll_runs", 1000)
+            if item.get("id", "").lower() == normalized or str(item.get("data", {}).get("run_no", "")).strip().lower() == normalized
+        ),
+        None,
+    )
+
+def _find_payment_batch(batch_id: str):
+    normalized = batch_id.strip().lower()
+    return next(
+        (
+            item for item in _items("payment_batches", 1000)
+            if item.get("id", "").lower() == normalized or str(item.get("data", {}).get("batch_id", "")).strip().lower() == normalized
+        ),
+        None,
+    )
+
+def _salary_slips_for_period(period: str, limit: int = 1000):
+    normalized = period.strip().lower()
+    return [
+        item for item in _items("salary_slips", limit)
+        if str(item.get("data", {}).get("period", "")).strip().lower() == normalized
+    ]
+
+def _update_salary_slips_for_period(period: str, status: str, payment_date: str | None = None):
+    updated = []
+    for slip in _salary_slips_for_period(period):
+        payload = {"status": status}
+        if payment_date is not None:
+            payload["payment_date"] = payment_date
+        updated.append(storage.update_record("salary_slips", slip.get("id", ""), payload))
+    return updated
+
+def _payment_dashboard():
+    runs = _items("payroll_runs", 500)
+    batches = _items("payment_batches", 500)
+    slips = _items("salary_slips", 1000)
+    active_batch_runs = {
+        str(item.get("data", {}).get("payroll_run", "")).strip().lower()
+        for item in batches
+        if (item.get("data", {}).get("payment_status") or item.get("status")) not in PAYROLL_PAYMENT_FINAL_STATUSES
+    }
+    ready_runs = []
+    for run in runs:
+        data = run.get("data", {})
+        run_no = str(data.get("run_no", run.get("id", ""))).strip()
+        status = data.get("approval_status") or run.get("status") or data.get("status")
+        if status in PAYROLL_PAYMENT_READY_STATUSES and run_no.lower() not in active_batch_runs:
+            ready_runs.append(run)
+    total_paid = sum(_money(item.get("data", {}).get("total_amount")) for item in batches if (item.get("data", {}).get("payment_status") or item.get("status")) == "Paid")
+    total_processing = sum(_money(item.get("data", {}).get("total_amount")) for item in batches if (item.get("data", {}).get("payment_status") or item.get("status")) == "Payment Processing")
+    return {
+        "stats": {
+            "payment_batches": len(batches),
+            "ready_runs": len(ready_runs),
+            "processing_batches": _status_count(batches, "Payment Processing"),
+            "paid_batches": _status_count(batches, "Paid"),
+            "cancelled_batches": _status_count(batches, "Cancelled", "Reversed"),
+            "salary_slips": len(slips),
+            "paid_slips": _status_count(slips, "Paid"),
+            "processing_slips": _status_count(slips, "Payment Processing"),
+            "total_paid": round(total_paid, 2),
+            "total_processing": round(total_processing, 2),
+        },
+        "ready_runs": ready_runs[:100],
+        "payment_batches": batches[:100],
+        "salary_slips": slips[:100],
+        "payment_methods": ["Bank Transfer", "NEFT", "RTGS", "IMPS", "UPI", "Cheque", "Cash"],
+    }
+
+def _create_payment_batch(payload: PaymentBatchRequest, actor: str):
+    run = _find_payroll_run(payload.payroll_run)
+    if not run:
+        raise HTTPException(status_code=404, detail="Payroll run not found.")
+    run_data = run.get("data", {})
+    run_no = str(run_data.get("run_no", run.get("id", ""))).strip()
+    run_status = run_data.get("approval_status") or run.get("status") or run_data.get("status")
+    if run_status not in PAYROLL_PAYMENT_READY_STATUSES:
+        raise HTTPException(status_code=409, detail="Payroll run must be approved, locked, or in payment processing before payment batch creation.")
+    for batch in _items("payment_batches", 1000):
+        data = batch.get("data", {})
+        same_run = str(data.get("payroll_run", "")).strip().lower() == run_no.lower()
+        batch_status = data.get("payment_status") or batch.get("status")
+        if same_run and batch_status not in PAYROLL_PAYMENT_FINAL_STATUSES:
+            raise HTTPException(status_code=409, detail="An active payment batch already exists for this payroll run.")
+    _parse_iso_date(payload.payment_date, "payment_date")
+    method = payload.payment_method.strip() or "Bank Transfer"
+    slips = _salary_slips_for_period(str(run_data.get("period", "")))
+    slip_total = sum(_money(item.get("data", {}).get("net_pay")) for item in slips)
+    total_amount = _money(run_data.get("net_pay")) or slip_total
+    if total_amount <= 0:
+        raise HTTPException(status_code=422, detail="Payroll run has no payable net amount.")
+    batch_id = _new_ref("PBAT")
+    bank_reference = (payload.bank_file_reference or "").strip() or f"BANKFILE-{batch_id}"
+    batch = storage.create_record("payment_batches", {
+        "batch_id": batch_id,
+        "payroll_run": run_no,
+        "payment_date": payload.payment_date,
+        "payment_method": method,
+        "total_amount": f"{total_amount:.2f}",
+        "bank_file_reference": bank_reference,
+        "payment_status": "Payment Processing",
+        "status": "Payment Processing",
+    })
+    storage.update_record("payroll_runs", run.get("id", ""), {
+        "approval_status": "Payment Processing",
+        "status": "Payment Processing",
+    })
+    updated_slips = _update_salary_slips_for_period(str(run_data.get("period", "")), "Payment Processing", payload.payment_date) if payload.mark_salary_slips else []
+    storage.create_record("payroll_approvals", {
+        "approval_id": _new_ref("PAPP"),
+        "payroll_run": run_no,
+        "approver": actor,
+        "decision": "Payment Processing",
+        "remarks": f"Payment batch {batch_id} created with {method}.",
+        "decided_at": _now_iso(),
+        "status": "Payment Processing",
+    })
+    _write_audit(actor, "create_payment_batch", "payment_batches", batch_id, batch.get("data", {}), f"{len(updated_slips)} salary slips moved to payment processing.")
+    return {"item": batch, "updated_salary_slips": len(updated_slips), "dashboard": _payment_dashboard()}
+
+def _decide_payment_batch(payload: PaymentBatchDecisionRequest, actor: str):
+    batch = _find_payment_batch(payload.batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Payment batch not found.")
+    data = batch.get("data", {})
+    current_status = data.get("payment_status") or batch.get("status")
+    decision = payload.decision.strip().title()
+    if decision not in {"Payment Processing", "Paid", "Cancelled", "Reversed"}:
+        raise HTTPException(status_code=422, detail="decision must be Payment Processing, Paid, Cancelled, or Reversed.")
+    if current_status in {"Paid", "Cancelled", "Reversed"} and current_status != decision:
+        raise HTTPException(status_code=409, detail=f"Payment batch is already {current_status}.")
+    run = _find_payroll_run(str(data.get("payroll_run", "")))
+    run_period = str(run.get("data", {}).get("period", "")) if run else ""
+    payment_date = data.get("payment_date") or _today()
+    if decision == "Paid":
+        run_status = "Paid"
+        slip_status = "Paid"
+        slip_payment_date = payment_date
+    elif decision == "Payment Processing":
+        run_status = "Payment Processing"
+        slip_status = "Payment Processing"
+        slip_payment_date = payment_date
+    elif decision == "Cancelled":
+        run_status = "Locked"
+        slip_status = "Draft"
+        slip_payment_date = ""
+    else:
+        run_status = "Reversed"
+        slip_status = "Reversed"
+        slip_payment_date = ""
+    updated_batch = storage.update_record("payment_batches", batch.get("id", ""), {
+        "payment_status": decision,
+        "status": decision,
+    })
+    if run:
+        storage.update_record("payroll_runs", run.get("id", ""), {
+            "approval_status": run_status,
+            "status": run_status,
+        })
+    updated_slips = _update_salary_slips_for_period(run_period, slip_status, slip_payment_date) if run_period else []
+    if decision == "Paid":
+        for slip in updated_slips[:100]:
+            slip_data = slip.get("data", {})
+            _notify_employee(slip_data.get("employee_code", ""), "salary_paid", "Salary payment completed", f"Salary for {slip_data.get('period', run_period)} has been marked paid.", slip_data.get("employee_code", ""))
+    storage.create_record("payroll_approvals", {
+        "approval_id": _new_ref("PAPP"),
+        "payroll_run": data.get("payroll_run", ""),
+        "approver": actor,
+        "decision": decision,
+        "remarks": payload.remarks or decision,
+        "decided_at": _now_iso(),
+        "status": decision,
+    })
+    _write_audit(actor, f"{decision.lower().replace(' ', '_')}_payment_batch", "payment_batches", data.get("batch_id", batch.get("id", "")), updated_batch.get("data", {}), payload.remarks or decision)
+    return {"item": updated_batch, "updated_salary_slips": len(updated_slips), "dashboard": _payment_dashboard()}
+
+def _payment_batch_csv(batch_id: str):
+    batch = _find_payment_batch(batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Payment batch not found.")
+    data = batch.get("data", {})
+    run = _find_payroll_run(str(data.get("payroll_run", "")))
+    period = str(run.get("data", {}).get("period", "")) if run else ""
+    slips = _salary_slips_for_period(period) if period else []
+    rows = [["batch_id", "payroll_run", "employee_code", "period", "net_pay", "payment_date", "payment_status"]]
+    for slip in slips:
+        slip_data = slip.get("data", {})
+        rows.append([
+            data.get("batch_id", batch.get("id", "")),
+            data.get("payroll_run", ""),
+            slip_data.get("employee_code", ""),
+            slip_data.get("period", ""),
+            slip_data.get("net_pay", "0"),
+            data.get("payment_date", ""),
+            data.get("payment_status", batch.get("status", "")),
+        ])
+    def cell(value: Any):
+        text = str(value).replace('"', '""')
+        return f'"{text}"'
+    csv_body = "\n".join(",".join(cell(value) for value in row) for row in rows)
+    return Response(content=csv_body, media_type="text/csv", headers={"Content-Disposition": f"attachment; filename={data.get('batch_id', 'payment_batch')}.csv"})
 
 def _payroll_calculation(payload: PayrollGenerateRequest, actor: str):
     start = _parse_iso_date(payload.start_date, "start_date")
@@ -3871,6 +4091,26 @@ def v1_decide_payroll_adjustment(payload: PayrollAdjustmentDecisionRequest, emai
 def v1_decide_payroll_run(payload: PayrollRunDecisionRequest, email: str = Depends(_verify)):
     _require_permission(email, "finance:write")
     return _decide_payroll_run(payload, email)
+
+@app.get("/api/v1/finance/payment-dashboard")
+def v1_finance_payment_dashboard(email: str = Depends(_verify)):
+    _require_permission(email, "finance:read")
+    return _payment_dashboard()
+
+@app.post("/api/v1/finance/payment-batches")
+def v1_create_payment_batch(payload: PaymentBatchRequest, email: str = Depends(_verify)):
+    _require_permission(email, "finance:write")
+    return _create_payment_batch(payload, email)
+
+@app.post("/api/v1/finance/payment-batches/decision")
+def v1_decide_payment_batch(payload: PaymentBatchDecisionRequest, email: str = Depends(_verify)):
+    _require_permission(email, "finance:write")
+    return _decide_payment_batch(payload, email)
+
+@app.get("/api/v1/finance/payment-batches/{batch_id}/export")
+def v1_export_payment_batch(batch_id: str, email: str = Depends(_verify)):
+    _require_permission(email, "finance:read")
+    return _payment_batch_csv(batch_id)
 
 @app.post("/api/v1/payroll/generate")
 def v1_generate_payroll(payload: PayrollGenerateRequest, email: str = Depends(_verify)):
