@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import type { MouseEvent, ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
@@ -14,6 +14,26 @@ type GeofenceDashboard = {
   geofences: ErpRecord[];
   assignments: ErpRecord[];
   validation_results: ErpRecord[];
+};
+type MapConfig = {
+  tile_url_template: string;
+  attribution: string;
+  default_center: { latitude: string; longitude: string; zoom: string };
+  radius_rules: Record<string, string>;
+};
+type GeocodeResult = { label: string; latitude: string; longitude: string; type: string; importance: string; bounding_box: string[] };
+
+const DEFAULT_MAP_CONFIG: MapConfig = {
+  tile_url_template: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+  attribution: "OpenStreetMap contributors",
+  default_center: { latitude: "19.076000", longitude: "72.877700", zoom: "15" },
+  radius_rules: {
+    minimum_radius_meters: "10",
+    maximum_radius_meters: "5000",
+    default_radius_meters: "150",
+    high_security_radius_meters: "50",
+    temporary_site_radius_meters: "250",
+  },
 };
 
 const DEFAULT_LOCATION = {
@@ -58,6 +78,24 @@ async function fetchDashboard() {
   return (await response.json()) as GeofenceDashboard;
 }
 
+async function fetchMapConfig() {
+  const response = await fetch(`${API_BASE}/api/v1/hr/map-config`, { headers: authHeaders() });
+  if (!response.ok) return DEFAULT_MAP_CONFIG;
+  return (await response.json()) as MapConfig;
+}
+
+async function searchAddress(value: string) {
+  const response = await fetch(`${API_BASE}/api/v1/hr/geocode?q=${encodeURIComponent(value)}&limit=5`, { headers: authHeaders() });
+  if (!response.ok) throw new Error("Address search failed");
+  return ((await response.json()).results || []) as GeocodeResult[];
+}
+
+async function reverseGeocode(latitude: string, longitude: string) {
+  const response = await fetch(`${API_BASE}/api/v1/hr/reverse-geocode?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`, { headers: authHeaders() });
+  if (!response.ok) throw new Error("Reverse geocode failed");
+  return await response.json() as { label: string; address: Record<string, string> };
+}
+
 async function postJson(path: string, payload: Record<string, string | number>) {
   const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",
@@ -76,6 +114,32 @@ function numeric(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function lonToTileX(longitude: number, zoom: number) {
+  return ((longitude + 180) / 360) * (2 ** zoom);
+}
+
+function latToTileY(latitude: number, zoom: number) {
+  const rad = latitude * Math.PI / 180;
+  return ((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * (2 ** zoom);
+}
+
+function tileXToLon(x: number, zoom: number) {
+  return (x / (2 ** zoom)) * 360 - 180;
+}
+
+function tileYToLat(y: number, zoom: number) {
+  const n = Math.PI - (2 * Math.PI * y) / (2 ** zoom);
+  return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+}
+
+function tileUrl(template: string, z: number, x: number, y: number) {
+  return template.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
+}
+
 function tone(status: string) {
   if (["Inside Fence", "Active", "Approved", "Passed"].includes(status)) return "border-emerald-200 bg-emerald-50 text-emerald-800";
   if (["Pending", "Pending Approval"].includes(status)) return "border-amber-200 bg-amber-50 text-amber-800";
@@ -86,6 +150,7 @@ function tone(status: string) {
 export default function HrLocationsPage() {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<GeofenceDashboard | null>(null);
+  const [mapConfig, setMapConfig] = useState<MapConfig>(DEFAULT_MAP_CONFIG);
   const [locationForm, setLocationForm] = useState(DEFAULT_LOCATION);
   const [geofenceForm, setGeofenceForm] = useState(DEFAULT_GEOFENCE);
   const [testForm, setTestForm] = useState(DEFAULT_TEST);
@@ -95,6 +160,10 @@ export default function HrLocationsPage() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [addressQuery, setAddressQuery] = useState("");
+  const [addressResults, setAddressResults] = useState<GeocodeResult[]>([]);
+  const [mapZoom, setMapZoom] = useState(15);
+  const [mapMessage, setMapMessage] = useState("");
 
   const load = () => {
     const token = localStorage.getItem("factorypulse_token");
@@ -102,8 +171,10 @@ export default function HrLocationsPage() {
       router.push("/login");
       return;
     }
-    fetchDashboard()
-      .then((body) => {
+    Promise.all([fetchDashboard(), fetchMapConfig()])
+      .then(([body, config]) => {
+        setMapConfig(config);
+        setMapZoom(clamp(Number(config.default_center.zoom) || 15, 3, 19));
         setDashboard(body);
         const firstLocation = body.work_locations[0]?.data;
         if (firstLocation) {
@@ -118,6 +189,19 @@ export default function HrLocationsPage() {
           }));
           setTestForm((current) => ({ ...current, location_id: current.location_id || locationId }));
           setAssignmentForm((current) => ({ ...current, location_id: current.location_id || locationId }));
+        } else {
+          setLocationForm((current) => current.latitude && current.longitude ? current : ({
+            ...current,
+            latitude: config.default_center.latitude,
+            longitude: config.default_center.longitude,
+            geofence_radius_meters: config.radius_rules.default_radius_meters || current.geofence_radius_meters,
+          }));
+          setGeofenceForm((current) => current.center_latitude && current.center_longitude ? current : ({
+            ...current,
+            center_latitude: config.default_center.latitude,
+            center_longitude: config.default_center.longitude,
+            radius_meters: config.radius_rules.default_radius_meters || current.radius_meters,
+          }));
         }
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Work location API failed"));
@@ -226,6 +310,75 @@ export default function HrLocationsPage() {
     }
   }
 
+  function placeMarker(latitude: number, longitude: number, source = "Map point selected") {
+    const lat = latitude.toFixed(8);
+    const lon = longitude.toFixed(8);
+    setLocationForm((current) => ({ ...current, latitude: lat, longitude: lon }));
+    setGeofenceForm((current) => ({ ...current, center_latitude: lat, center_longitude: lon }));
+    setTestForm((current) => ({ ...current, latitude: lat, longitude: lon }));
+    setMapMessage(`${source}: ${lat}, ${lon}`);
+  }
+
+  async function runAddressSearch() {
+    if (addressQuery.trim().length < 2) return;
+    setBusy("search");
+    setError("");
+    try {
+      const results = await searchAddress(addressQuery.trim());
+      setAddressResults(results);
+      if (results[0]) {
+        placeMarker(numeric(results[0].latitude), numeric(results[0].longitude), "Address matched");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Address search failed");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function fillAddressFromMarker() {
+    const latitude = geofenceForm.center_latitude || locationForm.latitude;
+    const longitude = geofenceForm.center_longitude || locationForm.longitude;
+    if (!latitude || !longitude) return;
+    setBusy("reverse");
+    setError("");
+    try {
+      const result = await reverseGeocode(latitude, longitude);
+      const address = result.address || {};
+      setLocationForm((current) => ({
+        ...current,
+        full_address: result.label || current.full_address,
+        city: address.city || address.town || address.village || current.city,
+        state: address.state || current.state,
+        country: address.country || current.country,
+      }));
+      setMapMessage("Reverse geocode filled the address fields.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Reverse geocode failed");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function useCurrentLocation() {
+    if (!navigator.geolocation) {
+      setError("Browser location is not available.");
+      return;
+    }
+    setBusy("gps");
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        placeMarker(position.coords.latitude, position.coords.longitude, `Current location (${Math.round(position.coords.accuracy)}m accuracy)`);
+        setBusy("");
+      },
+      () => {
+        setError("Could not read current location permission from browser.");
+        setBusy("");
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
+    );
+  }
+
   return (
     <main className="min-h-screen bg-slate-100 text-slate-950">
       <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
@@ -259,6 +412,59 @@ export default function HrLocationsPage() {
 
         <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_420px]">
           <section className="space-y-4">
+            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-teal-700">Interactive geofence map</p>
+                  <h2 className="mt-1 text-2xl font-semibold">Place, preview, and verify the factory boundary</h2>
+                  <p className="mt-1 text-sm text-slate-600">Tiles and geocoding are provider-configurable from the backend. Marker changes update the live save/test forms.</p>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input value={addressQuery} onChange={(event) => setAddressQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") runAddressSearch(); }} placeholder="Search address or site" className="h-11 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-teal-700 sm:w-72" />
+                  <button onClick={runAddressSearch} disabled={busy === "search"} className="rounded-lg bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50">{busy === "search" ? "Searching..." : "Search"}</button>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+                <GeofenceMap
+                  config={mapConfig}
+                  latitude={numeric(geofenceForm.center_latitude || locationForm.latitude || mapConfig.default_center.latitude)}
+                  longitude={numeric(geofenceForm.center_longitude || locationForm.longitude || mapConfig.default_center.longitude)}
+                  radius={numeric(geofenceForm.radius_meters || locationForm.geofence_radius_meters || mapConfig.radius_rules.default_radius_meters)}
+                  zoom={mapZoom}
+                  onZoom={setMapZoom}
+                  onPlace={placeMarker}
+                />
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={useCurrentLocation} disabled={busy === "gps"} className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-semibold text-teal-800 hover:border-teal-600 disabled:opacity-50">{busy === "gps" ? "Reading..." : "Current GPS"}</button>
+                    <button onClick={fillAddressFromMarker} disabled={busy === "reverse"} className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-800 hover:border-indigo-600 disabled:opacity-50">{busy === "reverse" ? "Reading..." : "Fill address"}</button>
+                    <button onClick={() => placeMarker(numeric(selectedLocation?.latitude || mapConfig.default_center.latitude), numeric(selectedLocation?.longitude || mapConfig.default_center.longitude), "Recentered")} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">Recenter</button>
+                    <button onClick={() => setTestForm((current) => ({ ...current, latitude: geofenceForm.center_latitude, longitude: geofenceForm.center_longitude }))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">Use for test</button>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                    <div className="font-semibold text-slate-800">Radius rules</div>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <Metric label="Minimum" value={`${mapConfig.radius_rules.minimum_radius_meters}m`} />
+                      <Metric label="Maximum" value={`${mapConfig.radius_rules.maximum_radius_meters}m`} />
+                      <Metric label="Default" value={`${mapConfig.radius_rules.default_radius_meters}m`} />
+                      <Metric label="High security" value={`${mapConfig.radius_rules.high_security_radius_meters}m`} />
+                    </div>
+                  </div>
+                  {mapMessage ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs font-medium text-emerald-800">{mapMessage}</div> : null}
+                  {addressResults.length ? (
+                    <div className="max-h-52 space-y-2 overflow-y-auto">
+                      {addressResults.map((result) => (
+                        <button key={`${result.latitude}-${result.longitude}-${result.label}`} onClick={() => placeMarker(numeric(result.latitude), numeric(result.longitude), "Address selected")} className="w-full rounded-lg border border-slate-200 bg-white p-3 text-left text-xs text-slate-700 hover:border-teal-600">
+                          <span className="font-semibold text-slate-900">{result.type || "Location"}</span>
+                          <span className="mt-1 block">{result.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
             <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                 <div>
@@ -419,6 +625,83 @@ function Stat({ label, value }: { label: string; value: number }) {
     <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
       <div className="text-xs font-medium text-slate-500">{label}</div>
       <div className="mt-1 text-2xl font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function GeofenceMap({
+  config,
+  latitude,
+  longitude,
+  radius,
+  zoom,
+  onZoom,
+  onPlace,
+}: {
+  config: MapConfig;
+  latitude: number;
+  longitude: number;
+  radius: number;
+  zoom: number;
+  onZoom: (value: number) => void;
+  onPlace: (latitude: number, longitude: number, source?: string) => void;
+}) {
+  const mapRef = useRef<HTMLDivElement | null>(null);
+  const safeLat = clamp(latitude || numeric(config.default_center.latitude), -85, 85);
+  const safeLon = clamp(longitude || numeric(config.default_center.longitude), -180, 180);
+  const safeZoom = clamp(Math.round(zoom || numeric(config.default_center.zoom) || 15), 3, 19);
+  const centerX = lonToTileX(safeLon, safeZoom);
+  const centerY = latToTileY(safeLat, safeZoom);
+  const tileCount = 2 ** safeZoom;
+  const metersPerPixel = Math.cos(safeLat * Math.PI / 180) * 40075016.686 / (tileCount * 256);
+  const radiusPx = clamp(radius / Math.max(metersPerPixel, 0.01), 14, 420);
+  const tiles = [];
+  for (let dx = -2; dx <= 2; dx += 1) {
+    for (let dy = -2; dy <= 2; dy += 1) {
+      const rawX = Math.floor(centerX) + dx;
+      const x = ((rawX % tileCount) + tileCount) % tileCount;
+      const y = clamp(Math.floor(centerY) + dy, 0, tileCount - 1);
+      tiles.push({ x, y, left: (rawX - centerX) * 256 + 320, top: (y - centerY) * 256 + 240 });
+    }
+  }
+
+  function handleClick(event: MouseEvent<HTMLDivElement>) {
+    const rect = mapRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = centerX + (event.clientX - rect.left - rect.width / 2) / 256;
+    const y = centerY + (event.clientY - rect.top - rect.height / 2) / 256;
+    onPlace(tileYToLat(y, safeZoom), tileXToLon(x, safeZoom), "Map click");
+  }
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-900">
+      <div ref={mapRef} onClick={handleClick} className="relative h-[420px] cursor-crosshair overflow-hidden sm:h-[480px]">
+        {tiles.map((tile) => (
+          <div
+            key={`${safeZoom}-${tile.x}-${tile.y}`}
+            className="absolute h-64 w-64 bg-cover bg-center"
+            style={{ left: tile.left, top: tile.top, backgroundImage: `url(${tileUrl(config.tile_url_template, safeZoom, tile.x, tile.y)})` }}
+          />
+        ))}
+        <div
+          className="pointer-events-none absolute left-1/2 top-1/2 rounded-full border-2 border-teal-500 bg-teal-400/15 shadow-[0_0_0_1px_rgba(255,255,255,0.65)]"
+          style={{ width: radiusPx * 2, height: radiusPx * 2, transform: "translate(-50%, -50%)" }}
+        />
+        <div className="pointer-events-none absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-full rounded-full border-2 border-white bg-rose-600 shadow-lg">
+          <div className="absolute left-1/2 top-full h-3 w-1 -translate-x-1/2 bg-rose-600" />
+        </div>
+        <div className="absolute left-3 top-3 flex overflow-hidden rounded-lg border border-white/70 bg-white shadow-sm">
+          <button onClick={(event) => { event.stopPropagation(); onZoom(clamp(safeZoom + 1, 3, 19)); }} className="h-9 w-10 border-r border-slate-200 text-lg font-semibold text-slate-800 hover:bg-slate-50">+</button>
+          <button onClick={(event) => { event.stopPropagation(); onZoom(clamp(safeZoom - 1, 3, 19)); }} className="h-9 w-10 text-lg font-semibold text-slate-800 hover:bg-slate-50">-</button>
+        </div>
+        <div className="absolute bottom-3 left-3 rounded-lg bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-sm">
+          {safeLat.toFixed(6)}, {safeLon.toFixed(6)} / z{safeZoom} / {Math.round(radius)}m
+        </div>
+      </div>
+      <div className="flex items-center justify-between gap-3 border-t border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-300">
+        <span>Click map to place marker. Radius preview uses configured meters-per-pixel at this latitude.</span>
+        <span className="shrink-0">{config.attribution}</span>
+      </div>
     </div>
   );
 }

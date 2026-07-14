@@ -5,13 +5,15 @@ import json
 import math
 import os
 import time
+import urllib.parse
+import urllib.request
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -3997,6 +3999,53 @@ def _attendance_calendar(employee_code: str):
         days.append({"date": value, "day": day, "status": status})
     return {"month": today.strftime("%B %Y"), "present": present, "absent": absent, "leave": leave, "holiday": holiday, "days": days}
 
+def _map_provider_config():
+    return {
+        "tile_url_template": os.getenv("MAP_TILE_URL_TEMPLATE", "https://tile.openstreetmap.org/{z}/{x}/{y}.png"),
+        "attribution": os.getenv("MAP_ATTRIBUTION", "OpenStreetMap contributors"),
+        "geocoding_provider": os.getenv("GEOCODING_PROVIDER", "nominatim"),
+        "reverse_geocoding_provider": os.getenv("REVERSE_GEOCODING_PROVIDER", "nominatim"),
+        "geocoding_url": os.getenv("GEOCODING_URL", "https://nominatim.openstreetmap.org/search"),
+        "reverse_geocoding_url": os.getenv("REVERSE_GEOCODING_URL", "https://nominatim.openstreetmap.org/reverse"),
+        "default_center": {
+            "latitude": os.getenv("MAP_DEFAULT_LATITUDE", "19.076000"),
+            "longitude": os.getenv("MAP_DEFAULT_LONGITUDE", "72.877700"),
+            "zoom": os.getenv("MAP_DEFAULT_ZOOM", "15"),
+        },
+        "radius_rules": {
+            "minimum_radius_meters": os.getenv("MIN_GEOFENCE_RADIUS_METERS", "10"),
+            "maximum_radius_meters": os.getenv("MAX_GEOFENCE_RADIUS_METERS", "5000"),
+            "default_radius_meters": os.getenv("DEFAULT_GEOFENCE_RADIUS_METERS", "150"),
+            "high_security_radius_meters": os.getenv("HIGH_SECURITY_GEOFENCE_RADIUS_METERS", "50"),
+            "temporary_site_radius_meters": os.getenv("TEMPORARY_SITE_GEOFENCE_RADIUS_METERS", "250"),
+        },
+    }
+
+def _fetch_json_url(url: str):
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": os.getenv("MAP_USER_AGENT", "FactoryPulseERP/0.5 location-admin")},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=8) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Map provider request failed: {exc}")
+
+def _map_url(base: str, params: dict[str, Any]):
+    separator = "&" if "?" in base else "?"
+    return f"{base}{separator}{urllib.parse.urlencode(params)}"
+
+def _normalize_geocode_result(row: dict[str, Any]):
+    return {
+        "label": row.get("display_name") or row.get("name") or "",
+        "latitude": str(row.get("lat", "")),
+        "longitude": str(row.get("lon", "")),
+        "type": row.get("type") or row.get("class") or "",
+        "importance": str(row.get("importance", "")),
+        "bounding_box": row.get("boundingbox", []),
+    }
+
 @app.get("/")
 def root():
     return {"service": "FactoryPulse Global ERP API", "version": "0.5.0", "database": storage.mode, "auth_configured": AUTH_CONFIGURED}
@@ -4040,6 +4089,38 @@ def mobile_summary(_: str = Depends(_verify)):
             }
             for item in summary["departments"]
         ],
+    }
+
+@app.get("/api/v1/hr/map-config")
+def v1_hr_map_config(email: str = Depends(_verify)):
+    _require_permission(email, "hr:read")
+    return _map_provider_config()
+
+@app.get("/api/v1/hr/geocode")
+def v1_hr_geocode(q: str = Query(..., min_length=2), limit: int = Query(5, ge=1, le=10), email: str = Depends(_verify)):
+    _require_permission(email, "hr:read")
+    config = _map_provider_config()
+    url = _map_url(config["geocoding_url"], {"q": q, "format": "json", "limit": limit, "addressdetails": 1})
+    rows = _fetch_json_url(url)
+    if not isinstance(rows, list):
+        rows = []
+    return {"provider": config["geocoding_provider"], "results": [_normalize_geocode_result(row) for row in rows[:limit]]}
+
+@app.get("/api/v1/hr/reverse-geocode")
+def v1_hr_reverse_geocode(latitude: float, longitude: float, email: str = Depends(_verify)):
+    _require_permission(email, "hr:read")
+    _validate_lat_lon(latitude, longitude)
+    config = _map_provider_config()
+    url = _map_url(config["reverse_geocoding_url"], {"lat": latitude, "lon": longitude, "format": "json", "addressdetails": 1})
+    row = _fetch_json_url(url)
+    if not isinstance(row, dict):
+        row = {}
+    return {
+        "provider": config["reverse_geocoding_provider"],
+        "label": row.get("display_name") or "",
+        "address": row.get("address") or {},
+        "latitude": str(row.get("lat", latitude)),
+        "longitude": str(row.get("lon", longitude)),
     }
 
 @app.get("/api/mobile/employee/summary")
