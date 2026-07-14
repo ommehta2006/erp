@@ -813,6 +813,66 @@ def _point_in_polygon(latitude: float, longitude: float, points: list[tuple[floa
         j = i
     return inside
 
+def _project_polygon_points(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    if not points:
+        return []
+    origin_lat = sum(point[0] for point in points) / len(points)
+    origin_lon = sum(point[1] for point in points) / len(points)
+    meters_per_degree_lat = 111320.0
+    meters_per_degree_lon = 111320.0 * math.cos(math.radians(origin_lat))
+    return [
+        ((lon - origin_lon) * meters_per_degree_lon, (lat - origin_lat) * meters_per_degree_lat)
+        for lat, lon in points
+    ]
+
+def _polygon_area_square_meters(points: list[tuple[float, float]]) -> float:
+    projected = _project_polygon_points(points)
+    if len(projected) < 3:
+        return 0.0
+    area = 0.0
+    for index, (x1, y1) in enumerate(projected):
+        x2, y2 = projected[(index + 1) % len(projected)]
+        area += x1 * y2 - x2 * y1
+    return abs(area) / 2
+
+def _orientation(a: tuple[float, float], b: tuple[float, float], c: tuple[float, float]) -> int:
+    value = (b[1] - a[1]) * (c[0] - b[0]) - (b[0] - a[0]) * (c[1] - b[1])
+    if abs(value) < 1e-10:
+        return 0
+    return 1 if value > 0 else 2
+
+def _on_segment(a: tuple[float, float], b: tuple[float, float], c: tuple[float, float]) -> bool:
+    return min(a[0], c[0]) <= b[0] <= max(a[0], c[0]) and min(a[1], c[1]) <= b[1] <= max(a[1], c[1])
+
+def _segments_intersect(a1: tuple[float, float], a2: tuple[float, float], b1: tuple[float, float], b2: tuple[float, float]) -> bool:
+    o1 = _orientation(a1, a2, b1)
+    o2 = _orientation(a1, a2, b2)
+    o3 = _orientation(b1, b2, a1)
+    o4 = _orientation(b1, b2, a2)
+    if o1 != o2 and o3 != o4:
+        return True
+    return (
+        (o1 == 0 and _on_segment(a1, b1, a2))
+        or (o2 == 0 and _on_segment(a1, b2, a2))
+        or (o3 == 0 and _on_segment(b1, a1, b2))
+        or (o4 == 0 and _on_segment(b1, a2, b2))
+    )
+
+def _polygon_self_intersects(points: list[tuple[float, float]]) -> bool:
+    projected = _project_polygon_points(points)
+    edge_count = len(projected)
+    for first in range(edge_count):
+        a1 = projected[first]
+        a2 = projected[(first + 1) % edge_count]
+        for second in range(first + 1, edge_count):
+            if abs(first - second) <= 1 or {first, second} == {0, edge_count - 1}:
+                continue
+            b1 = projected[second]
+            b2 = projected[(second + 1) % edge_count]
+            if _segments_intersect(a1, a2, b1, b2):
+                return True
+    return False
+
 def _records_by_field(resource: str, field: str, value: str, limit: int = 500):
     return [
         item for item in storage.list_records(resource, limit)
@@ -986,10 +1046,32 @@ def _validate_geofence_numbers(radius: float, accuracy: float):
 
 def _validate_polygon_payload(geofence_type: str, polygon_coordinates: str | None):
     if "polygon" not in geofence_type.lower():
-        return
+        return {"points": [], "area_square_meters": 0.0}
     points = _json_points(polygon_coordinates)
     if len(points) < 3:
         raise HTTPException(status_code=422, detail="polygon geofence requires at least three valid coordinate points.")
+    for lat, lon in points:
+        _validate_lat_lon(lat, lon)
+    if _polygon_self_intersects(points):
+        raise HTTPException(status_code=422, detail="polygon geofence cannot self-intersect.")
+    area = _polygon_area_square_meters(points)
+    if area < 10:
+        raise HTTPException(status_code=422, detail="polygon geofence area is too small to use safely.")
+    return {"points": points, "area_square_meters": area}
+
+def _persist_geofence_polygon_points(geofence_id: str, boundary_version: str, points: list[tuple[float, float]]):
+    created = []
+    for index, (latitude, longitude) in enumerate(points, start=1):
+        created.append(storage.create_record("geofence_polygon_points", {
+            "point_id": _new_ref("GEOPT"),
+            "geofence_id": geofence_id,
+            "boundary_version": boundary_version,
+            "point_order": str(index),
+            "latitude": f"{latitude:.8f}",
+            "longitude": f"{longitude:.8f}",
+            "status": "Active",
+        }))
+    return created
 
 def _test_geofence(location_id: str, latitude: float, longitude: float, accuracy: float):
     _validate_lat_lon(latitude, longitude)
@@ -4740,6 +4822,8 @@ def v1_hr_geofence_dashboard(email: str = Depends(_verify)):
     overview = _hr_overview()
     work_locations = _items("work_locations", 200)
     geofences = _items("geofences", 200)
+    geofence_versions = _items("geofence_versions", 500)
+    polygon_points = _items("geofence_polygon_points", 1000)
     assignments = _items("employee_location_assignments", 500)
     validation_results = _items("attendance_validation_results", 200)
     return {
@@ -4755,6 +4839,8 @@ def v1_hr_geofence_dashboard(email: str = Depends(_verify)):
         "validation_results": validation_results,
         "work_locations": work_locations,
         "geofences": geofences,
+        "geofence_versions": geofence_versions,
+        "geofence_polygon_points": polygon_points,
         "assignments": assignments,
     }
 
@@ -4795,7 +4881,7 @@ def v1_hr_create_geofence(payload: HrGeofenceRequest, email: str = Depends(_veri
     _require_permission(email, "hr:write")
     _validate_lat_lon(payload.center_latitude, payload.center_longitude)
     _validate_geofence_numbers(payload.radius_meters, payload.allowed_accuracy_meters)
-    _validate_polygon_payload(payload.geofence_type, payload.polygon_coordinates)
+    polygon = _validate_polygon_payload(payload.geofence_type, payload.polygon_coordinates)
     location = _active_record(_records_by_field("work_locations", "location_id", payload.location_id))
     if not location:
         raise HTTPException(status_code=404, detail="Work location not found.")
@@ -4817,18 +4903,21 @@ def v1_hr_create_geofence(payload: HrGeofenceRequest, email: str = Depends(_veri
         "approval_status": payload.approval_status.strip(),
         "status": payload.status.strip() or "Active",
     })
+    point_count = len(polygon["points"])
+    area_summary = f" Polygon points: {point_count}; approximate area: {polygon['area_square_meters']:.2f} sqm." if point_count else ""
     version = storage.create_record("geofence_versions", {
         "version_id": _new_ref("GEOV"),
         "geofence_id": geofence_id,
         "boundary_version": payload.boundary_version.strip() or "1",
-        "change_summary": "Initial geofence boundary created.",
+        "change_summary": f"Initial geofence boundary created.{area_summary}",
         "changed_by": email,
         "approved_by": email if payload.approval_status.strip() == "Approved" else "",
         "effective_date": payload.effective_start_date or _today(),
         "status": payload.status.strip() or "Active",
     })
-    _write_audit(email, "create_geofence", "geofences", geofence_id, {"geofence": item.get("data", {}), "version": version.get("data", {})}, "HR geofence created.")
-    return {"item": item, "version": version, "dashboard": v1_hr_geofence_dashboard(email)}
+    point_rows = _persist_geofence_polygon_points(geofence_id, payload.boundary_version.strip() or "1", polygon["points"])
+    _write_audit(email, "create_geofence", "geofences", geofence_id, {"geofence": item.get("data", {}), "version": version.get("data", {}), "polygon_points": len(point_rows), "polygon_area_square_meters": f"{polygon['area_square_meters']:.2f}"}, "HR geofence created.")
+    return {"item": item, "version": version, "polygon_points": point_rows, "polygon_area_square_meters": f"{polygon['area_square_meters']:.2f}", "dashboard": v1_hr_geofence_dashboard(email)}
 
 @app.post("/api/v1/hr/geofences/test")
 def v1_hr_test_geofence(payload: HrGeofenceTestRequest, email: str = Depends(_verify)):

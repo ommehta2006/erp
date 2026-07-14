@@ -12,6 +12,8 @@ type GeofenceDashboard = {
   stats: Record<string, number>;
   work_locations: ErpRecord[];
   geofences: ErpRecord[];
+  geofence_versions: ErpRecord[];
+  geofence_polygon_points: ErpRecord[];
   assignments: ErpRecord[];
   validation_results: ErpRecord[];
 };
@@ -22,6 +24,7 @@ type MapConfig = {
   radius_rules: Record<string, string>;
 };
 type GeocodeResult = { label: string; latitude: string; longitude: string; type: string; importance: string; bounding_box: string[] };
+type PolygonPoint = { latitude: string; longitude: string };
 
 const DEFAULT_MAP_CONFIG: MapConfig = {
   tile_url_template: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -140,6 +143,21 @@ function tileUrl(template: string, z: number, x: number, y: number) {
   return template.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
 }
 
+function parsePolygonPoints(value?: string): PolygonPoint[] {
+  if (!value) return [];
+  try {
+    const raw = JSON.parse(value);
+    if (!Array.isArray(raw)) return [];
+    return raw.flatMap((item) => {
+      const lat = typeof item === "object" ? item.latitude ?? item.lat : Array.isArray(item) ? item[0] : "";
+      const lon = typeof item === "object" ? item.longitude ?? item.lng ?? item.lon : Array.isArray(item) ? item[1] : "";
+      return Number.isFinite(Number(lat)) && Number.isFinite(Number(lon)) ? [{ latitude: String(lat), longitude: String(lon) }] : [];
+    });
+  } catch {
+    return [];
+  }
+}
+
 function tone(status: string) {
   if (["Inside Fence", "Active", "Approved", "Passed"].includes(status)) return "border-emerald-200 bg-emerald-50 text-emerald-800";
   if (["Pending", "Pending Approval"].includes(status)) return "border-amber-200 bg-amber-50 text-amber-800";
@@ -153,6 +171,7 @@ export default function HrLocationsPage() {
   const [mapConfig, setMapConfig] = useState<MapConfig>(DEFAULT_MAP_CONFIG);
   const [locationForm, setLocationForm] = useState(DEFAULT_LOCATION);
   const [geofenceForm, setGeofenceForm] = useState(DEFAULT_GEOFENCE);
+  const [polygonPoints, setPolygonPoints] = useState<PolygonPoint[]>([]);
   const [testForm, setTestForm] = useState(DEFAULT_TEST);
   const [assignmentForm, setAssignmentForm] = useState(DEFAULT_ASSIGNMENT);
   const [testResult, setTestResult] = useState<Record<string, string> | null>(null);
@@ -220,6 +239,32 @@ export default function HrLocationsPage() {
   const locationOptions = dashboard?.work_locations || [];
   const selectedLocation = locationOptions.find((item) => item.data.location_id === geofenceForm.location_id)?.data;
   const latestValidations = (dashboard?.validation_results || []).slice(0, 8);
+
+  function savedPolygonFor(geofence?: ErpRecord) {
+    if (!geofence) return [];
+    const pointRows = (dashboard?.geofence_polygon_points || [])
+      .filter((item) => item.data.geofence_id === geofence.data.geofence_id && (!geofence.data.boundary_version || item.data.boundary_version === geofence.data.boundary_version))
+      .sort((a, b) => numeric(a.data.point_order) - numeric(b.data.point_order))
+      .map((item) => ({ latitude: item.data.latitude || "", longitude: item.data.longitude || "" }));
+    return pointRows.length ? pointRows : parsePolygonPoints(geofence.data.polygon_coordinates);
+  }
+
+  function selectLocationForEditing(location: Record<string, string>, geofence?: ErpRecord) {
+    const points = savedPolygonFor(geofence);
+    setGeofenceForm((current) => ({
+      ...current,
+      location_id: location.location_id || "",
+      geofence_type: geofence?.data.geofence_type || location.geofence_type || current.geofence_type,
+      center_latitude: geofence?.data.center_latitude || location.latitude || "",
+      center_longitude: geofence?.data.center_longitude || location.longitude || "",
+      radius_meters: geofence?.data.radius_meters || location.geofence_radius_meters || current.radius_meters,
+      allowed_accuracy_meters: geofence?.data.allowed_accuracy_meters || location.allowed_gps_accuracy_meters || current.allowed_accuracy_meters,
+      polygon_coordinates: points.length ? JSON.stringify(points.map((point) => ({ lat: numeric(point.latitude), lng: numeric(point.longitude) }))) : geofence?.data.polygon_coordinates || "",
+    }));
+    setPolygonPoints(points);
+    setTestForm((current) => ({ ...current, location_id: location.location_id || "" }));
+    setAssignmentForm((current) => ({ ...current, location_id: location.location_id || "" }));
+  }
 
   async function createLocation() {
     setBusy("location");
@@ -317,6 +362,33 @@ export default function HrLocationsPage() {
     setGeofenceForm((current) => ({ ...current, center_latitude: lat, center_longitude: lon }));
     setTestForm((current) => ({ ...current, latitude: lat, longitude: lon }));
     setMapMessage(`${source}: ${lat}, ${lon}`);
+  }
+
+  function syncPolygon(nextPoints: PolygonPoint[]) {
+    setPolygonPoints(nextPoints);
+    setGeofenceForm((current) => ({
+      ...current,
+      geofence_type: "Polygon",
+      polygon_coordinates: JSON.stringify(nextPoints.map((point) => ({ lat: numeric(point.latitude), lng: numeric(point.longitude) }))),
+    }));
+  }
+
+  function addPolygonPoint(latitude: number, longitude: number) {
+    const point = { latitude: latitude.toFixed(8), longitude: longitude.toFixed(8) };
+    syncPolygon([...polygonPoints, point]);
+    placeMarker(latitude, longitude, `Polygon point ${polygonPoints.length + 1} added`);
+  }
+
+  function removePolygonPoint(index: number) {
+    syncPolygon(polygonPoints.filter((_, pointIndex) => pointIndex !== index));
+  }
+
+  function movePolygonPoint(index: number, direction: -1 | 1) {
+    const target = index + direction;
+    if (target < 0 || target >= polygonPoints.length) return;
+    const next = [...polygonPoints];
+    [next[index], next[target]] = [next[target], next[index]];
+    syncPolygon(next);
   }
 
   async function runAddressSearch() {
@@ -430,9 +502,12 @@ export default function HrLocationsPage() {
                   latitude={numeric(geofenceForm.center_latitude || locationForm.latitude || mapConfig.default_center.latitude)}
                   longitude={numeric(geofenceForm.center_longitude || locationForm.longitude || mapConfig.default_center.longitude)}
                   radius={numeric(geofenceForm.radius_meters || locationForm.geofence_radius_meters || mapConfig.radius_rules.default_radius_meters)}
+                  polygonPoints={polygonPoints}
+                  polygonMode={geofenceForm.geofence_type === "Polygon"}
                   zoom={mapZoom}
                   onZoom={setMapZoom}
                   onPlace={placeMarker}
+                  onPolygonPoint={addPolygonPoint}
                 />
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-2">
@@ -440,6 +515,32 @@ export default function HrLocationsPage() {
                     <button onClick={fillAddressFromMarker} disabled={busy === "reverse"} className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-800 hover:border-indigo-600 disabled:opacity-50">{busy === "reverse" ? "Reading..." : "Fill address"}</button>
                     <button onClick={() => placeMarker(numeric(selectedLocation?.latitude || mapConfig.default_center.latitude), numeric(selectedLocation?.longitude || mapConfig.default_center.longitude), "Recentered")} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">Recenter</button>
                     <button onClick={() => setTestForm((current) => ({ ...current, latitude: geofenceForm.center_latitude, longitude: geofenceForm.center_longitude }))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">Use for test</button>
+                    <button onClick={() => setGeofenceForm((current) => ({ ...current, geofence_type: current.geofence_type === "Polygon" ? "Circular" : "Polygon" }))} className="rounded-lg border border-fuchsia-200 bg-fuchsia-50 px-3 py-2 text-sm font-semibold text-fuchsia-800 hover:border-fuchsia-600">{geofenceForm.geofence_type === "Polygon" ? "Circle mode" : "Polygon mode"}</button>
+                    <button onClick={() => syncPolygon([])} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">Reset polygon</button>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-white p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900">Polygon boundary</div>
+                        <div className="text-xs text-slate-500">{polygonPoints.length} points / click the map in polygon mode to add points</div>
+                      </div>
+                      <span className={`rounded-lg border px-2 py-1 text-xs font-semibold ${polygonPoints.length >= 3 ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>{polygonPoints.length >= 3 ? "Ready" : "Needs 3"}</span>
+                    </div>
+                    <div className="mt-3 max-h-48 space-y-2 overflow-y-auto">
+                      {polygonPoints.length === 0 ? <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">No polygon points yet.</div> : polygonPoints.map((point, index) => (
+                        <div key={`${point.latitude}-${point.longitude}-${index}`} className="grid grid-cols-[1fr_auto] gap-2 rounded-lg border border-slate-100 p-2 text-xs">
+                          <button onClick={() => placeMarker(numeric(point.latitude), numeric(point.longitude), `Point ${index + 1} selected`)} className="min-w-0 text-left">
+                            <span className="font-semibold text-slate-800">P{index + 1}</span>
+                            <span className="ml-2 text-slate-500">{point.latitude}, {point.longitude}</span>
+                          </button>
+                          <div className="flex gap-1">
+                            <button onClick={() => movePolygonPoint(index, -1)} className="h-7 rounded border border-slate-200 px-2 text-slate-600 disabled:opacity-40" disabled={index === 0}>Up</button>
+                            <button onClick={() => movePolygonPoint(index, 1)} className="h-7 rounded border border-slate-200 px-2 text-slate-600 disabled:opacity-40" disabled={index === polygonPoints.length - 1}>Dn</button>
+                            <button onClick={() => removePolygonPoint(index)} className="h-7 rounded border border-rose-200 px-2 text-rose-700">Del</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
                     <div className="font-semibold text-slate-800">Radius rules</div>
@@ -485,16 +586,7 @@ export default function HrLocationsPage() {
                     <button
                       key={item.id}
                       onClick={() => {
-                        setGeofenceForm((current) => ({
-                          ...current,
-                          location_id: item.data.location_id || "",
-                          center_latitude: item.data.latitude || "",
-                          center_longitude: item.data.longitude || "",
-                          radius_meters: geofence?.data.radius_meters || item.data.geofence_radius_meters || current.radius_meters,
-                          allowed_accuracy_meters: geofence?.data.allowed_accuracy_meters || item.data.allowed_gps_accuracy_meters || current.allowed_accuracy_meters,
-                        }));
-                        setTestForm((current) => ({ ...current, location_id: item.data.location_id || "" }));
-                        setAssignmentForm((current) => ({ ...current, location_id: item.data.location_id || "" }));
+                        selectLocationForEditing(item.data, geofence);
                       }}
                       className="rounded-lg border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-teal-600 hover:shadow-md"
                     >
@@ -570,12 +662,8 @@ export default function HrLocationsPage() {
             <Panel title="Create Geofence" action="Save geofence" busy={busy === "geofence"} onSubmit={createGeofence}>
               <Select label="Location" value={geofenceForm.location_id} options={locationOptions.map((item) => item.data.location_id).filter(Boolean)} onChange={(value) => {
                 const next = locationOptions.find((item) => item.data.location_id === value)?.data;
-                setGeofenceForm({
-                  ...geofenceForm,
-                  location_id: value,
-                  center_latitude: next?.latitude || geofenceForm.center_latitude,
-                  center_longitude: next?.longitude || geofenceForm.center_longitude,
-                });
+                const nextGeofence = dashboard?.geofences.find((item) => item.data.location_id === value);
+                if (next) selectLocationForEditing(next, nextGeofence);
               }} />
               {selectedLocation ? <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600">{selectedLocation.location_name} / {selectedLocation.full_address}</p> : null}
               <Select label="Type" value={geofenceForm.geofence_type} options={["Circular", "Polygon"]} onChange={(value) => setGeofenceForm({ ...geofenceForm, geofence_type: value })} />
@@ -634,17 +722,23 @@ function GeofenceMap({
   latitude,
   longitude,
   radius,
+  polygonPoints,
+  polygonMode,
   zoom,
   onZoom,
   onPlace,
+  onPolygonPoint,
 }: {
   config: MapConfig;
   latitude: number;
   longitude: number;
   radius: number;
+  polygonPoints: PolygonPoint[];
+  polygonMode: boolean;
   zoom: number;
   onZoom: (value: number) => void;
   onPlace: (latitude: number, longitude: number, source?: string) => void;
+  onPolygonPoint: (latitude: number, longitude: number) => void;
 }) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const safeLat = clamp(latitude || numeric(config.default_center.latitude), -85, 85);
@@ -655,13 +749,18 @@ function GeofenceMap({
   const tileCount = 2 ** safeZoom;
   const metersPerPixel = Math.cos(safeLat * Math.PI / 180) * 40075016.686 / (tileCount * 256);
   const radiusPx = clamp(radius / Math.max(metersPerPixel, 0.01), 14, 420);
+  const polygonScreenPoints = polygonPoints.map((point) => ({
+    x: (lonToTileX(numeric(point.longitude), safeZoom) - centerX) * 256,
+    y: (latToTileY(numeric(point.latitude), safeZoom) - centerY) * 256,
+  }));
+  const polygonSvgPoints = polygonScreenPoints.map((point) => `${point.x},${point.y}`).join(" ");
   const tiles = [];
   for (let dx = -2; dx <= 2; dx += 1) {
     for (let dy = -2; dy <= 2; dy += 1) {
       const rawX = Math.floor(centerX) + dx;
       const x = ((rawX % tileCount) + tileCount) % tileCount;
       const y = clamp(Math.floor(centerY) + dy, 0, tileCount - 1);
-      tiles.push({ x, y, left: (rawX - centerX) * 256 + 320, top: (y - centerY) * 256 + 240 });
+      tiles.push({ x, y, left: (rawX - centerX) * 256, top: (y - centerY) * 256 });
     }
   }
 
@@ -670,7 +769,13 @@ function GeofenceMap({
     if (!rect) return;
     const x = centerX + (event.clientX - rect.left - rect.width / 2) / 256;
     const y = centerY + (event.clientY - rect.top - rect.height / 2) / 256;
-    onPlace(tileYToLat(y, safeZoom), tileXToLon(x, safeZoom), "Map click");
+    const nextLat = tileYToLat(y, safeZoom);
+    const nextLon = tileXToLon(x, safeZoom);
+    if (polygonMode) {
+      onPolygonPoint(nextLat, nextLon);
+      return;
+    }
+    onPlace(nextLat, nextLon, "Map click");
   }
 
   return (
@@ -680,9 +785,23 @@ function GeofenceMap({
           <div
             key={`${safeZoom}-${tile.x}-${tile.y}`}
             className="absolute h-64 w-64 bg-cover bg-center"
-            style={{ left: tile.left, top: tile.top, backgroundImage: `url(${tileUrl(config.tile_url_template, safeZoom, tile.x, tile.y)})` }}
+            style={{ left: `calc(50% + ${tile.left}px)`, top: `calc(50% + ${tile.top}px)`, backgroundImage: `url(${tileUrl(config.tile_url_template, safeZoom, tile.x, tile.y)})` }}
           />
         ))}
+        <svg className="pointer-events-none absolute left-1/2 top-1/2 h-[1200px] w-[1200px] -translate-x-1/2 -translate-y-1/2 overflow-visible" viewBox="-600 -600 1200 1200">
+          {polygonScreenPoints.length >= 2 ? (
+            <polyline points={polygonSvgPoints} fill="none" stroke="#c026d3" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+          ) : null}
+          {polygonScreenPoints.length >= 3 ? (
+            <polygon points={polygonSvgPoints} fill="rgba(192,38,211,0.16)" stroke="#c026d3" strokeWidth="2" strokeLinejoin="round" />
+          ) : null}
+          {polygonScreenPoints.map((point, index) => (
+            <g key={`${point.x}-${point.y}-${index}`} transform={`translate(${point.x}, ${point.y})`}>
+              <circle r="9" fill="#c026d3" stroke="white" strokeWidth="2" />
+              <text y="4" textAnchor="middle" fill="white" fontSize="10" fontWeight="700">{index + 1}</text>
+            </g>
+          ))}
+        </svg>
         <div
           className="pointer-events-none absolute left-1/2 top-1/2 rounded-full border-2 border-teal-500 bg-teal-400/15 shadow-[0_0_0_1px_rgba(255,255,255,0.65)]"
           style={{ width: radiusPx * 2, height: radiusPx * 2, transform: "translate(-50%, -50%)" }}
@@ -695,11 +814,11 @@ function GeofenceMap({
           <button onClick={(event) => { event.stopPropagation(); onZoom(clamp(safeZoom - 1, 3, 19)); }} className="h-9 w-10 text-lg font-semibold text-slate-800 hover:bg-slate-50">-</button>
         </div>
         <div className="absolute bottom-3 left-3 rounded-lg bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-sm">
-          {safeLat.toFixed(6)}, {safeLon.toFixed(6)} / z{safeZoom} / {Math.round(radius)}m
+          {safeLat.toFixed(6)}, {safeLon.toFixed(6)} / z{safeZoom} / {Math.round(radius)}m / {polygonMode ? "polygon draw" : "marker"}
         </div>
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-300">
-        <span>Click map to place marker. Radius preview uses configured meters-per-pixel at this latitude.</span>
+        <span>{polygonMode ? "Click map to add polygon points. Use the point list to reorder or delete." : "Click map to place marker. Radius preview uses configured meters-per-pixel at this latitude."}</span>
         <span className="shrink-0">{config.attribution}</span>
       </div>
     </div>
