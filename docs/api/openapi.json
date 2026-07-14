@@ -4668,6 +4668,17 @@
             ],
             "title": "Attendance Record Id"
           },
+          "transaction_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transaction Token"
+          },
           "verification_method": {
             "type": "string",
             "title": "Verification Method"
@@ -4789,6 +4800,28 @@
               }
             ],
             "title": "Note"
+          },
+          "transaction_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transaction Token"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
           }
         },
         "type": "object",

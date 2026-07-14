@@ -62,6 +62,8 @@ class EmployeeAttendanceEvent(BaseModel):
     longitude: float | None = None
     accuracy: float | None = None
     note: str | None = None
+    transaction_token: str | None = None
+    idempotency_key: str | None = None
 
 class EmployeeLocationPing(BaseModel):
     employee_code: str | None = None
@@ -299,6 +301,7 @@ class AdminJobRunRequest(BaseModel):
 class BiometricVerificationRequest(BaseModel):
     event_type: str = "day_in"
     attendance_record_id: str | None = None
+    transaction_token: str | None = None
     verification_method: str
     verification_result: str
     assertion_reference: str | None = None
@@ -649,6 +652,109 @@ def _gps(payload: EmployeeAttendanceEvent | EmployeeLocationPing) -> str:
 
 def _new_ref(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12].upper()}"
+
+ATTENDANCE_TRANSACTION_TTL_SECONDS = int(os.getenv("ATTENDANCE_TRANSACTION_TTL_SECONDS", "300"))
+
+def _normalize_event_type(value: str):
+    normalized = value.strip().lower().replace("_", "-")
+    if normalized not in {"day-in", "day-out"}:
+        raise HTTPException(status_code=422, detail="event_type must be day-in or day-out.")
+    return normalized
+
+def _transaction_hash(token: str):
+    return hashlib.sha256(token.encode()).hexdigest()
+
+def _new_transaction_token():
+    return base64.urlsafe_b64encode(os.urandom(24)).decode().rstrip("=")
+
+def _parse_utc_iso(value: str):
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except Exception:
+        return datetime.now(timezone.utc) - timedelta(seconds=1)
+
+def _create_attendance_transaction(employee_code: str, event_type: str, refs: dict[str, str], idempotency_key: str = ""):
+    normalized_event = _normalize_event_type(event_type)
+    token = _new_transaction_token()
+    expires_at = (datetime.now(timezone.utc) + timedelta(seconds=ATTENDANCE_TRANSACTION_TTL_SECONDS)).isoformat()
+    item = storage.create_record("attendance_transaction_tokens", {
+        "token_id": _new_ref("ATXN"),
+        "transaction_token_hash": _transaction_hash(token),
+        "employee_code": employee_code,
+        "event_type": normalized_event,
+        "location_validation_id": refs.get("validation_id", ""),
+        "location_event_id": refs.get("event_id", ""),
+        "expires_at": expires_at,
+        "consumed_at": "",
+        "biometric_event_id": "",
+        "idempotency_key": idempotency_key.strip(),
+        "status": "Active",
+    })
+    return {"token": token, "expires_at": expires_at, "item": item}
+
+def _find_attendance_transaction(employee_code: str, event_type: str, token: str):
+    normalized_event = _normalize_event_type(event_type)
+    hashed = _transaction_hash(token.strip())
+    for item in _items("attendance_transaction_tokens", 1000):
+        data = item.get("data", {})
+        if (
+            data.get("transaction_token_hash") == hashed
+            and data.get("employee_code", "").lower() == employee_code.lower()
+            and data.get("event_type") == normalized_event
+        ):
+            return item
+    return None
+
+def _require_attendance_transaction(employee_code: str, event_type: str, token: str | None, require_biometric: bool = False):
+    if not token:
+        raise HTTPException(status_code=428, detail="A short-lived attendance transaction token is required. Validate location first.")
+    item = _find_attendance_transaction(employee_code, event_type, token)
+    if not item:
+        raise HTTPException(status_code=403, detail="Invalid attendance transaction token.")
+    data = item.get("data", {})
+    status = data.get("status") or item.get("status")
+    if _parse_utc_iso(data.get("expires_at", "")) < datetime.now(timezone.utc):
+        if status not in {"Expired", "Consumed"}:
+            storage.update_record("attendance_transaction_tokens", item.get("id", ""), {"status": "Expired"})
+        raise HTTPException(status_code=403, detail="Attendance transaction token expired. Refresh location and try again.")
+    if status == "Consumed":
+        raise HTTPException(status_code=409, detail="Attendance transaction token was already used.")
+    if require_biometric and status != "Biometric Verified":
+        raise HTTPException(status_code=428, detail="Successful biometric verification is required before completing attendance.")
+    return item
+
+def _attach_biometric_to_transaction(employee_code: str, event_type: str, token: str | None, biometric_event_id: str):
+    if not token:
+        return None
+    item = _require_attendance_transaction(employee_code, event_type, token)
+    return storage.update_record("attendance_transaction_tokens", item.get("id", ""), {
+        "biometric_event_id": biometric_event_id,
+        "status": "Biometric Verified",
+    })
+
+def _consume_attendance_transaction(item: dict[str, Any], idempotency_key: str | None = None):
+    payload = {
+        "consumed_at": _now_iso(),
+        "status": "Consumed",
+    }
+    if idempotency_key:
+        payload["idempotency_key"] = idempotency_key.strip()
+    return storage.update_record("attendance_transaction_tokens", item.get("id", ""), payload)
+
+def _idempotent_attendance_replay(employee_code: str, event_type: str, idempotency_key: str | None):
+    if not idempotency_key:
+        return None
+    normalized_event = _normalize_event_type(event_type)
+    for item in _items("attendance_transaction_tokens", 1000):
+        data = item.get("data", {})
+        if (
+            data.get("employee_code", "").lower() == employee_code.lower()
+            and data.get("event_type") == normalized_event
+            and data.get("idempotency_key") == idempotency_key.strip()
+            and (data.get("status") or item.get("status")) == "Consumed"
+        ):
+            return {"idempotent_replay": True, "attendance": _attendance_snapshot(employee_code, _attendance_policy())}
+    return None
 
 def _float_value(data: dict[str, Any], key: str, default: float = 0.0) -> float:
     try:
@@ -3967,8 +4073,19 @@ def v1_validate_employee_location(payload: LocationValidationRequest, email: str
     employee_code = _employee_code(email)
     validation = _geofence_validation(employee_code, payload)
     refs = _persist_location_validation(employee_code, payload, validation)
+    transaction = None
+    if validation["can_continue"]:
+        transaction = _create_attendance_transaction(employee_code, payload.event_type, refs)
     _write_audit(email, "validate_location", "attendance_validation_results", refs["validation_id"], validation, validation["validation_reason"])
-    return {"validation": validation, "refs": refs}
+    return {
+        "validation": validation,
+        "refs": refs,
+        "transaction": {
+            "token": transaction["token"],
+            "expires_at": transaction["expires_at"],
+            "ttl_seconds": ATTENDANCE_TRANSACTION_TTL_SECONDS,
+        } if transaction else None,
+    }
 
 @app.post("/api/v1/employee/attendance/biometric")
 def v1_employee_biometric(payload: BiometricVerificationRequest, email: str = Depends(_verify)):
@@ -4000,8 +4117,11 @@ def v1_employee_biometric(payload: BiometricVerificationRequest, email: str = De
         "verified_at": _now_iso(),
         "status": "Passed" if result == "success" else "Failed",
     })
+    transaction = None
+    if result == "success" and payload.transaction_token:
+        transaction = _attach_biometric_to_transaction(employee_code, payload.event_type, payload.transaction_token, event_id)
     _write_audit(email, "biometric_verification", "attendance_biometric_events", event_id, item.get("data", {}), "OS biometric result metadata only.")
-    return {"item": item, "biometric_privacy": "Raw fingerprints and biometric templates are not captured, transmitted, or stored."}
+    return {"item": item, "transaction": transaction, "biometric_privacy": "Raw fingerprints and biometric templates are not captured, transmitted, or stored."}
 
 @app.get("/api/v1/hr/overview")
 def v1_hr_overview(email: str = Depends(_verify)):
@@ -4699,6 +4819,10 @@ def v1_validate_payroll(payload: PayrollGenerateRequest, email: str = Depends(_v
 @app.post("/api/mobile/employee/day-in")
 def employee_day_in(payload: EmployeeAttendanceEvent, email: str = Depends(_verify)):
     employee_code = _employee_code(email, payload.employee_code)
+    replay = _idempotent_attendance_replay(employee_code, "day-in", payload.idempotency_key)
+    if replay:
+        return replay
+    transaction = _require_attendance_transaction(employee_code, "day-in", payload.transaction_token, require_biometric=True)
     policy = _attendance_policy()
     snapshot = _attendance_snapshot(employee_code, policy)
     if snapshot["checked_in"]:
@@ -4734,7 +4858,7 @@ def employee_day_in(payload: EmployeeAttendanceEvent, email: str = Depends(_veri
         "day_in_accuracy": validation["accuracy_meters"],
         "day_in_distance": validation["distance_meters"],
         "day_in_geofence_status": validation["geofence_status"],
-        "day_in_biometric_result": "Pending",
+        "day_in_biometric_result": "Verified",
         "attendance_status": "Present",
         "payroll_status": "Pending",
         "approval_status": "Approved" if validation["inside_fence"] == "Yes" else "Pending",
@@ -4752,12 +4876,17 @@ def employee_day_in(payload: EmployeeAttendanceEvent, email: str = Depends(_veri
             "status": "Active",
         })
     _notify_employee(employee_code, "day_in_success", "Day In recorded", f"Day In at {_hhmm()} with {validation['geofence_status']} status.", email)
-    _write_audit(email, "day_in", "attendance", item.get("id", ""), {"attendance": item, "validation": validation}, "Employee mobile day-in.")
-    return {"item": item, "attendance": _attendance_snapshot(employee_code, policy), "attendance_policy": policy, "validation": validation, "refs": refs}
+    consumed = _consume_attendance_transaction(transaction, payload.idempotency_key)
+    _write_audit(email, "day_in", "attendance", item.get("id", ""), {"attendance": item, "validation": validation, "transaction": consumed.get("data", {})}, "Employee mobile day-in.")
+    return {"item": item, "attendance": _attendance_snapshot(employee_code, policy), "attendance_policy": policy, "validation": validation, "refs": refs, "transaction": consumed}
 
 @app.post("/api/mobile/employee/day-out")
 def employee_day_out(payload: EmployeeAttendanceEvent, email: str = Depends(_verify)):
     employee_code = _employee_code(email, payload.employee_code)
+    replay = _idempotent_attendance_replay(employee_code, "day-out", payload.idempotency_key)
+    if replay:
+        return replay
+    transaction = _require_attendance_transaction(employee_code, "day-out", payload.transaction_token, require_biometric=True)
     policy = _attendance_policy()
     snapshot = _attendance_snapshot(employee_code, policy)
     if not snapshot["day_in_time"]:
@@ -4789,8 +4918,9 @@ def employee_day_out(payload: EmployeeAttendanceEvent, email: str = Depends(_ver
             "status": "Completed",
         })
     _notify_employee(employee_code, "day_out_success", "Day Out recorded", f"Day Out at {_hhmm()} with {validation['geofence_status']} status.", email)
-    _write_audit(email, "day_out", "attendance", item.get("id", ""), {"attendance": item, "validation": validation}, "Employee mobile day-out.")
-    return {"item": item, "attendance": _attendance_snapshot(employee_code, policy), "attendance_policy": policy, "validation": validation, "refs": refs}
+    consumed = _consume_attendance_transaction(transaction, payload.idempotency_key)
+    _write_audit(email, "day_out", "attendance", item.get("id", ""), {"attendance": item, "validation": validation, "transaction": consumed.get("data", {})}, "Employee mobile day-out.")
+    return {"item": item, "attendance": _attendance_snapshot(employee_code, policy), "attendance_policy": policy, "validation": validation, "refs": refs, "transaction": consumed}
 
 @app.post("/api/mobile/employee/location")
 def employee_location(payload: EmployeeLocationPing, email: str = Depends(_verify)):

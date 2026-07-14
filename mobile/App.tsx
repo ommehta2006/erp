@@ -23,6 +23,7 @@ import {
 const API_BASE = "https://erp-production-8664.up.railway.app";
 const TOKEN_KEY = "factorypulse_token";
 const USER_KEY = "factorypulse_user";
+const TRUSTED_DEVICE_KEY = "factorypulse_trusted_device_id";
 const STATUSES = ["Open", "Active", "Pending", "Approved", "Rejected", "Completed", "Closed", "On Hold", "Critical"];
 
 type User = { email: string; name: string; role: string };
@@ -327,8 +328,46 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
   async function attendanceAction(kind: "day-in" | "day-out") {
     setBusy(true);
     try {
-      await requireThumb();
       const location = await currentLocation();
+      const idempotencyKey = `${kind}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const validationResponse = await fetch(`${API_BASE}/api/v1/employee/attendance/validate-location`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          event_type: kind,
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+          accuracy: location.coords.accuracy || 9999,
+          provider: "expo_location",
+          captured_at: new Date().toISOString(),
+          device_time: new Date().toISOString(),
+          device_id: await trustedDeviceId(),
+          app_version: "expo-go",
+        })
+      });
+      const validationBody = await validationResponse.json().catch(() => ({}));
+      if (!validationResponse.ok) throw new Error(validationBody.detail || "Location validation failed");
+      const transactionToken = validationBody.transaction?.token;
+      if (!transactionToken) throw new Error("Location was not approved for attendance.");
+
+      const biometric = await requireThumb();
+      const deviceId = await trustedDeviceId();
+      const biometricResponse = await fetch(`${API_BASE}/api/v1/employee/attendance/biometric`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          event_type: kind,
+          transaction_token: transactionToken,
+          verification_method: biometric.method,
+          verification_result: "success",
+          assertion_reference: `${deviceId}-${Date.now()}`,
+          trusted_device_id: deviceId,
+          risk_flags: "expo_local_auth",
+        })
+      });
+      const biometricBody = await biometricResponse.json().catch(() => ({}));
+      if (!biometricResponse.ok) throw new Error(biometricBody.detail || "Biometric verification failed");
+
       const response = await fetch(`${API_BASE}/api/mobile/employee/${kind}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -337,6 +376,8 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
           latitude: location?.coords.latitude,
           longitude: location?.coords.longitude,
           accuracy: location?.coords.accuracy,
+          transaction_token: transactionToken,
+          idempotency_key: idempotencyKey,
         })
       });
       if (!response.ok) {
@@ -606,18 +647,30 @@ function WorkScreen({ token, navigate }: { token: string; navigate: (screen: Scr
   );
 }
 
+async function trustedDeviceId() {
+  const existing = await AsyncStorage.getItem(TRUSTED_DEVICE_KEY);
+  if (existing) return existing;
+  const created = `${Platform.OS}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  await AsyncStorage.setItem(TRUSTED_DEVICE_KEY, created);
+  return created;
+}
+
 async function requireThumb() {
   const compatible = await LocalAuthentication.hasHardwareAsync();
   const enrolled = await LocalAuthentication.isEnrolledAsync();
   if (!compatible || !enrolled) {
     throw new Error("Fingerprint or device lock is not enrolled on this phone.");
   }
+  const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
   const result = await LocalAuthentication.authenticateAsync({
     promptMessage: "Confirm with thumb",
     fallbackLabel: "Use device passcode",
     disableDeviceFallback: false,
   });
   if (!result.success) throw new Error("Thumb verification cancelled or failed.");
+  return {
+    method: types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT) ? "fingerprint" : "device_credential",
+  };
 }
 
 async function currentLocation() {

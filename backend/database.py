@@ -126,6 +126,7 @@ EXPERT_HR_MODULES = {
     "attendance_validation_results": ["validation_id", "employee_code", "event_type", "location_id", "geofence_id", "employee_latitude", "employee_longitude", "geofence_latitude", "geofence_longitude", "distance_meters", "radius_meters", "inside_fence", "accuracy_meters", "allowed_accuracy_meters", "geofence_status", "validation_reason", "risk_flags", "server_validated_at", "status"],
     "attendance_correction_requests": ["request_id", "employee_code", "attendance_date", "requested_day_in_time", "requested_day_out_time", "reason", "current_record", "requested_changes", "manager_approval", "hr_approval", "final_status", "status"],
     "attendance_approvals": ["approval_id", "attendance_record_id", "employee_code", "approval_type", "approver", "decision", "comments", "decided_at", "status"],
+    "attendance_transaction_tokens": ["token_id", "transaction_token_hash", "employee_code", "event_type", "location_validation_id", "location_event_id", "expires_at", "consumed_at", "biometric_event_id", "idempotency_key", "status"],
     "device_registrations": ["device_id", "employee_code", "platform", "device_name", "app_version", "restricted_device", "registered_at", "approval_status", "status"],
     "device_integrity_events": ["event_id", "employee_code", "device_id", "signal_type", "risk_score", "risk_flags", "observed_at", "status"],
     "leave_types": ["leave_type", "paid_status", "requires_attachment", "allow_half_day", "allow_hourly", "status"],
@@ -160,7 +161,7 @@ DEPARTMENTS["hr"]["modules"] = [
     "attendance_records", "attendance_location_events", "attendance_biometric_events", "attendance_validation_results",
     "employee_biometric_enrollments",
     "attendance_correction_requests", "attendance_approvals", "leave_types", "leave_policies", "leave_allocations",
-    "leave_balances", "leave_applications", "leave_approvals", "leave_requests", "holiday_calendars", "holidays",
+    "attendance_transaction_tokens", "leave_balances", "leave_applications", "leave_approvals", "leave_requests", "holiday_calendars", "holidays",
     "holiday_calendar", "salary_structures", "employee_salary_assignments", "salary_revision_history", "salary_slips",
     "departments", "designations", "performance_reviews", "training_records", "recruitment", "visitor_passes",
 ]
@@ -188,7 +189,7 @@ REQUIRED_FIELDS = {
 
 STATUS_VALUES = {
     "Open", "Active", "Inactive", "Pending", "Approved", "Rejected", "Completed", "Closed", "On Hold", "Critical",
-    "Draft", "Locked", "Payment Processing", "Partially Paid", "Paid", "Cancelled", "Reversed", "Expired", "Encashed", "Present", "Absent", "Half Day", "Late", "Early Exit",
+    "Draft", "Locked", "Payment Processing", "Partially Paid", "Paid", "Cancelled", "Reversed", "Expired", "Encashed", "Biometric Verified", "Consumed", "Present", "Absent", "Half Day", "Late", "Early Exit",
     "Overtime", "Out of Fence", "Pending Approval", "Attendance Corrected", "Failed", "Passed",
 }
 NUMERIC_FIELD_WORDS = {
