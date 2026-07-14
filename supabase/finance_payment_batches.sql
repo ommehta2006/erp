@@ -27,6 +27,33 @@ create table if not exists public.payment_batches (
     check (payment_status in ('Payment Processing', 'Paid', 'Cancelled', 'Reversed'))
 );
 
+create table if not exists public.payroll_runs (
+  id uuid primary key default gen_random_uuid(),
+  run_no text,
+  period text,
+  department text,
+  gross_pay text,
+  deductions text,
+  net_pay text,
+  approval_status text,
+  status text not null default 'Open',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.salary_slips (
+  id uuid primary key default gen_random_uuid(),
+  employee_code text,
+  period text,
+  gross_pay text,
+  deductions text,
+  net_pay text,
+  payment_date text,
+  status text not null default 'Draft',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create index if not exists idx_payment_batches_payroll_run
   on public.payment_batches(payroll_run);
 
@@ -35,6 +62,15 @@ create index if not exists idx_payment_batches_status_updated
 
 create index if not exists idx_payment_batches_payment_date
   on public.payment_batches(payment_date);
+
+create index if not exists idx_payroll_runs_period_status
+  on public.payroll_runs(period, status, approval_status);
+
+create index if not exists idx_salary_slips_employee_period
+  on public.salary_slips(employee_code, period, status);
+
+create index if not exists idx_salary_slips_payment_status
+  on public.salary_slips(payment_date, status);
 
 alter table public.payment_batches enable row level security;
 
@@ -59,6 +95,16 @@ end $$;
 drop trigger if exists set_payment_batches_updated_at on public.payment_batches;
 create trigger set_payment_batches_updated_at
   before update on public.payment_batches
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists set_payroll_runs_updated_at on public.payroll_runs;
+create trigger set_payroll_runs_updated_at
+  before update on public.payroll_runs
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists set_salary_slips_updated_at on public.salary_slips;
+create trigger set_salary_slips_updated_at
+  before update on public.salary_slips
   for each row execute function public.set_updated_at();
 
 alter table public.salary_slips enable row level security;
