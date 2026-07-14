@@ -978,6 +978,168 @@
         }
       }
     },
+    "/api/v1/hr/leave/policies": {
+      "post": {
+        "summary": "V1 Hr Leave Policy",
+        "operationId": "v1_hr_leave_policy_api_v1_hr_leave_policies_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeavePolicyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hr/leave/accrual-run": {
+      "post": {
+        "summary": "V1 Hr Leave Accrual Run",
+        "operationId": "v1_hr_leave_accrual_run_api_v1_hr_leave_accrual_run_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaveAccrualRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hr/leave/encashment": {
+      "post": {
+        "summary": "V1 Hr Leave Encashment",
+        "operationId": "v1_hr_leave_encashment_api_v1_hr_leave_encashment_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaveEncashmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/hr/leave/applications": {
       "post": {
         "summary": "V1 Hr Leave Application",
@@ -5812,6 +5974,62 @@
         ],
         "title": "HrWorkLocationRequest"
       },
+      "LeaveAccrualRunRequest": {
+        "properties": {
+          "period": {
+            "type": "string",
+            "title": "Period"
+          },
+          "target_period": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Period"
+          },
+          "run_type": {
+            "type": "string",
+            "title": "Run Type",
+            "default": "Accrual"
+          },
+          "employee_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employee Code"
+          },
+          "leave_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leave Type"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "period"
+        ],
+        "title": "LeaveAccrualRunRequest"
+      },
       "LeaveAllocationRequest": {
         "properties": {
           "employee_code": {
@@ -6005,6 +6223,128 @@
           "decision"
         ],
         "title": "LeaveDecisionRequest"
+      },
+      "LeaveEncashmentRequest": {
+        "properties": {
+          "employee_code": {
+            "type": "string",
+            "title": "Employee Code"
+          },
+          "leave_type": {
+            "type": "string",
+            "title": "Leave Type"
+          },
+          "period": {
+            "type": "string",
+            "title": "Period"
+          },
+          "days": {
+            "type": "number",
+            "title": "Days"
+          },
+          "amount_per_day": {
+            "type": "number",
+            "title": "Amount Per Day"
+          },
+          "payroll_month": {
+            "type": "string",
+            "title": "Payroll Month"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "employee_code",
+          "leave_type",
+          "period",
+          "days",
+          "amount_per_day",
+          "payroll_month",
+          "reason"
+        ],
+        "title": "LeaveEncashmentRequest"
+      },
+      "LeavePolicyRequest": {
+        "properties": {
+          "policy_name": {
+            "type": "string",
+            "title": "Policy Name"
+          },
+          "leave_type": {
+            "type": "string",
+            "title": "Leave Type"
+          },
+          "accrual_frequency": {
+            "type": "string",
+            "title": "Accrual Frequency",
+            "default": "Monthly"
+          },
+          "accrual_days": {
+            "type": "number",
+            "title": "Accrual Days",
+            "default": 1
+          },
+          "max_balance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Balance"
+          },
+          "carry_forward_enabled": {
+            "type": "boolean",
+            "title": "Carry Forward Enabled",
+            "default": true
+          },
+          "max_carry_forward_days": {
+            "type": "number",
+            "title": "Max Carry Forward Days",
+            "default": 0
+          },
+          "encashment_enabled": {
+            "type": "boolean",
+            "title": "Encashment Enabled",
+            "default": false
+          },
+          "encashment_rate_percent": {
+            "type": "number",
+            "title": "Encashment Rate Percent",
+            "default": 100
+          },
+          "negative_balance_allowed": {
+            "type": "boolean",
+            "title": "Negative Balance Allowed",
+            "default": false
+          },
+          "approval_levels": {
+            "type": "string",
+            "title": "Approval Levels",
+            "default": "Manager,HR"
+          },
+          "payroll_impact": {
+            "type": "string",
+            "title": "Payroll Impact",
+            "default": "Paid"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "Active"
+          }
+        },
+        "type": "object",
+        "required": [
+          "policy_name",
+          "leave_type"
+        ],
+        "title": "LeavePolicyRequest"
       },
       "LocationValidationRequest": {
         "properties": {

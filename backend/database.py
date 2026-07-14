@@ -188,7 +188,7 @@ REQUIRED_FIELDS = {
 
 STATUS_VALUES = {
     "Open", "Active", "Inactive", "Pending", "Approved", "Rejected", "Completed", "Closed", "On Hold", "Critical",
-    "Draft", "Locked", "Payment Processing", "Partially Paid", "Paid", "Cancelled", "Reversed", "Present", "Absent", "Half Day", "Late", "Early Exit",
+    "Draft", "Locked", "Payment Processing", "Partially Paid", "Paid", "Cancelled", "Reversed", "Expired", "Encashed", "Present", "Absent", "Half Day", "Late", "Early Exit",
     "Overtime", "Out of Fence", "Pending Approval", "Attendance Corrected", "Failed", "Passed",
 }
 NUMERIC_FIELD_WORDS = {

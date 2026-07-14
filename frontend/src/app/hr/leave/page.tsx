@@ -19,11 +19,13 @@ type LeaveApplication = {
   payroll_impact: string;
 };
 
+type RecordItem = { id: string; data: Record<string, string>; status: string };
 type LeaveDashboard = {
   stats: Record<string, number>;
   applications: LeaveApplication[];
   pending: LeaveApplication[];
   balances: Record<string, string | number>[];
+  policies: RecordItem[];
   holidays: Record<string, string>[];
   calendars: Record<string, string>[];
 };
@@ -48,6 +50,9 @@ export default function HrLeavePage() {
   const [busy, setBusy] = useState("");
   const [query, setQuery] = useState("");
   const [allocation, setAllocation] = useState({ employee_code: "", leave_type: "Casual Leave", period: CURRENT_YEAR, allocated_days: "12", expiry_date: `${CURRENT_YEAR}-12-31` });
+  const [policy, setPolicy] = useState({ policy_name: "Factory Leave Policy", leave_type: "Casual Leave", accrual_frequency: "Monthly", accrual_days: "1", max_balance: "24", carry_forward_enabled: true, max_carry_forward_days: "12", encashment_enabled: false, encashment_rate_percent: "100", negative_balance_allowed: false, approval_levels: "Manager,HR", payroll_impact: "Paid", status: "Active" });
+  const [accrualRun, setAccrualRun] = useState({ period: CURRENT_YEAR, target_period: CURRENT_YEAR, run_type: "Accrual", employee_code: "", leave_type: "", dry_run: false });
+  const [encashment, setEncashment] = useState({ employee_code: "", leave_type: "Casual Leave", period: CURRENT_YEAR, days: "1", amount_per_day: "1000", payroll_month: `${CURRENT_YEAR}-${String(new Date().getMonth() + 1).padStart(2, "0")}`, reason: "Leave encashment requested by HR policy" });
   const [holiday, setHoliday] = useState({ calendar_id: `CAL-${CURRENT_YEAR}`, holiday_name: "", holiday_date: todayIso(), holiday_type: "Company Holiday", paid_status: "Paid", optional_or_mandatory: "Mandatory", payroll_impact: "Paid", notes: "" });
   const [application, setApplication] = useState({ employee_code: "", leave_type: "Casual Leave", start_date: todayIso(), end_date: todayIso(), half_day: false, reason: "", payroll_impact: "Paid" });
 
@@ -110,6 +115,7 @@ export default function HrLeavePage() {
     ["Rejected", dashboard?.stats.rejected || 0],
     ["Balances", dashboard?.stats.balances || 0],
     ["Holidays", dashboard?.stats.holidays || 0],
+    ["Policies", dashboard?.stats.active_policies || 0],
   ];
 
   return (
@@ -123,6 +129,7 @@ export default function HrLeavePage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Link href="/departments/hr?module=leave_applications" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:border-teal-600">Generic Leave Table</Link>
+            <Link href="/departments/hr?module=leave_policies" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:border-emerald-600">Raw Policies</Link>
             <Link href="/finance" className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">Payroll</Link>
           </div>
         </div>
@@ -141,7 +148,7 @@ export default function HrLeavePage() {
             </div>
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search leave records" className="h-11 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-teal-700 lg:w-80" />
           </div>
-          <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
+          <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-7">
             {stats.map(([label, value]) => (
               <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <div className="text-xs font-medium text-slate-500">{label}</div>
@@ -217,6 +224,81 @@ export default function HrLeavePage() {
               </div>
             </Panel>
 
+            <Panel title="Leave Policy">
+              <div className="grid gap-2">
+                <Input label="Policy Name" value={policy.policy_name} onChange={(value) => setPolicy((current) => ({ ...current, policy_name: value }))} />
+                <div className="grid grid-cols-2 gap-2">
+                  <Input label="Leave Type" value={policy.leave_type} onChange={(value) => setPolicy((current) => ({ ...current, leave_type: value }))} />
+                  <Input label="Accrual Days" type="number" value={policy.accrual_days} onChange={(value) => setPolicy((current) => ({ ...current, accrual_days: value }))} />
+                  <Input label="Max Balance" type="number" value={policy.max_balance} onChange={(value) => setPolicy((current) => ({ ...current, max_balance: value }))} />
+                  <Input label="Carry Forward Max" type="number" value={policy.max_carry_forward_days} onChange={(value) => setPolicy((current) => ({ ...current, max_carry_forward_days: value }))} />
+                </div>
+                <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                  <input type="checkbox" checked={policy.carry_forward_enabled} onChange={(event) => setPolicy((current) => ({ ...current, carry_forward_enabled: event.target.checked }))} />
+                  Carry forward enabled
+                </label>
+                <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                  <input type="checkbox" checked={policy.encashment_enabled} onChange={(event) => setPolicy((current) => ({ ...current, encashment_enabled: event.target.checked }))} />
+                  Encashment enabled
+                </label>
+                <button disabled={Boolean(busy)} onClick={() => postJson("/api/v1/hr/leave/policies", {
+                  ...policy,
+                  accrual_days: Number(policy.accrual_days || 0),
+                  max_balance: policy.max_balance ? Number(policy.max_balance) : undefined,
+                  max_carry_forward_days: Number(policy.max_carry_forward_days || 0),
+                  encashment_rate_percent: Number(policy.encashment_rate_percent || 100),
+                }, "Leave policy saved.")} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Save Policy</button>
+              </div>
+            </Panel>
+
+            <Panel title="Policy Run">
+              <div className="grid gap-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <Input label="Source Period" value={accrualRun.period} onChange={(value) => setAccrualRun((current) => ({ ...current, period: value }))} />
+                  <Input label="Target Period" value={accrualRun.target_period} onChange={(value) => setAccrualRun((current) => ({ ...current, target_period: value }))} />
+                </div>
+                <label className="text-sm font-medium text-slate-700">
+                  Run Type
+                  <select value={accrualRun.run_type} onChange={(event) => setAccrualRun((current) => ({ ...current, run_type: event.target.value }))} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-teal-700">
+                    {["Accrual", "Carry Forward", "Expiry"].map((item) => <option key={item}>{item}</option>)}
+                  </select>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input label="Employee Optional" value={accrualRun.employee_code} onChange={(value) => setAccrualRun((current) => ({ ...current, employee_code: value }))} />
+                  <Input label="Leave Type Optional" value={accrualRun.leave_type} onChange={(value) => setAccrualRun((current) => ({ ...current, leave_type: value }))} />
+                </div>
+                <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                  <input type="checkbox" checked={accrualRun.dry_run} onChange={(event) => setAccrualRun((current) => ({ ...current, dry_run: event.target.checked }))} />
+                  Dry run preview
+                </label>
+                <button disabled={Boolean(busy)} onClick={() => postJson("/api/v1/hr/leave/accrual-run", {
+                  ...accrualRun,
+                  employee_code: accrualRun.employee_code || undefined,
+                  leave_type: accrualRun.leave_type || undefined,
+                  target_period: accrualRun.target_period || undefined,
+                }, "Leave policy run completed.")} className="rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Run Leave Policy</button>
+              </div>
+            </Panel>
+
+            <Panel title="Leave Encashment">
+              <div className="grid gap-2">
+                <Input label="Employee Code" value={encashment.employee_code} onChange={(value) => setEncashment((current) => ({ ...current, employee_code: value }))} />
+                <div className="grid grid-cols-2 gap-2">
+                  <Input label="Leave Type" value={encashment.leave_type} onChange={(value) => setEncashment((current) => ({ ...current, leave_type: value }))} />
+                  <Input label="Period" value={encashment.period} onChange={(value) => setEncashment((current) => ({ ...current, period: value }))} />
+                  <Input label="Days" type="number" value={encashment.days} onChange={(value) => setEncashment((current) => ({ ...current, days: value }))} />
+                  <Input label="Amount / Day" type="number" value={encashment.amount_per_day} onChange={(value) => setEncashment((current) => ({ ...current, amount_per_day: value }))} />
+                </div>
+                <Input label="Payroll Month" value={encashment.payroll_month} onChange={(value) => setEncashment((current) => ({ ...current, payroll_month: value }))} />
+                <Input label="Reason" value={encashment.reason} onChange={(value) => setEncashment((current) => ({ ...current, reason: value }))} />
+                <button disabled={Boolean(busy)} onClick={() => postJson("/api/v1/hr/leave/encashment", {
+                  ...encashment,
+                  days: Number(encashment.days || 0),
+                  amount_per_day: Number(encashment.amount_per_day || 0),
+                }, "Leave encashment sent to payroll adjustments.")} className="rounded-lg bg-violet-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Submit Encashment</button>
+              </div>
+            </Panel>
+
             <Panel title="Create Holiday">
               <div className="grid gap-2">
                 <Input label="Holiday Name" value={holiday.holiday_name} onChange={(value) => setHoliday((current) => ({ ...current, holiday_name: value }))} />
@@ -238,6 +320,20 @@ export default function HrLeavePage() {
                       <span className="text-xs text-slate-500">{item.period}</span>
                     </div>
                     <div className="mt-1 text-xs text-slate-600">{item.leave_type}: {item.available_days} available / {item.allocated_days} allocated</div>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+
+            <Panel title="Policies">
+              <div className="space-y-2">
+                {(dashboard?.policies || []).slice(0, 5).map((item) => (
+                  <div key={item.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-semibold">{item.data.policy_name}</div>
+                      <span className="text-xs text-slate-500">{item.status}</span>
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600">{item.data.leave_type}: {item.data.payroll_impact}</div>
                   </div>
                 ))}
               </div>

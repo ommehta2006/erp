@@ -102,6 +102,38 @@ class LeaveAllocationRequest(BaseModel):
     expiry_date: str | None = None
     status: str = "Active"
 
+class LeavePolicyRequest(BaseModel):
+    policy_name: str
+    leave_type: str
+    accrual_frequency: str = "Monthly"
+    accrual_days: float = 1
+    max_balance: float | None = None
+    carry_forward_enabled: bool = True
+    max_carry_forward_days: float = 0
+    encashment_enabled: bool = False
+    encashment_rate_percent: float = 100
+    negative_balance_allowed: bool = False
+    approval_levels: str = "Manager,HR"
+    payroll_impact: str = "Paid"
+    status: str = "Active"
+
+class LeaveAccrualRunRequest(BaseModel):
+    period: str
+    target_period: str | None = None
+    run_type: str = "Accrual"
+    employee_code: str | None = None
+    leave_type: str | None = None
+    dry_run: bool = False
+
+class LeaveEncashmentRequest(BaseModel):
+    employee_code: str
+    leave_type: str
+    period: str
+    days: float
+    amount_per_day: float
+    payroll_month: str
+    reason: str
+
 class HolidayRequest(BaseModel):
     calendar_id: str
     holiday_name: str
@@ -1282,6 +1314,12 @@ def _leave_usage_by_employee():
             continue
         key = (data.get("employee_code", ""), data.get("leave_type", ""), data.get("start_date", "")[:4] or date.today().strftime("%Y"))
         usage[key] = usage.get(key, 0.0) + _money(data.get("total_leave_days"))
+    for item in _items("leave_allocations", 1000):
+        data = item.get("data", {})
+        if (data.get("status") or item.get("status")) != "Encashed":
+            continue
+        key = (data.get("employee_code", ""), data.get("leave_type", ""), data.get("period", ""))
+        usage[key] = usage.get(key, 0.0) + _money(data.get("used_days"))
     return usage
 
 def _leave_balance_rows():
@@ -1304,10 +1342,253 @@ def _leave_balance_rows():
         })
     return rows
 
+def _leave_policy_payload(payload: LeavePolicyRequest, actor: str):
+    if not payload.policy_name.strip() or not payload.leave_type.strip():
+        raise HTTPException(status_code=422, detail="policy_name and leave_type are required.")
+    if payload.accrual_days < 0:
+        raise HTTPException(status_code=422, detail="accrual_days cannot be negative.")
+    if payload.max_balance is not None and payload.max_balance < 0:
+        raise HTTPException(status_code=422, detail="max_balance cannot be negative.")
+    if payload.max_carry_forward_days < 0:
+        raise HTTPException(status_code=422, detail="max_carry_forward_days cannot be negative.")
+    if payload.encashment_rate_percent < 0:
+        raise HTTPException(status_code=422, detail="encashment_rate_percent cannot be negative.")
+    accrual_rule = {
+        "frequency": payload.accrual_frequency.strip() or "Monthly",
+        "days": round(payload.accrual_days, 2),
+        "max_balance": round(payload.max_balance, 2) if payload.max_balance is not None else None,
+    }
+    carry_rule = {
+        "enabled": payload.carry_forward_enabled,
+        "max_days": round(payload.max_carry_forward_days, 2),
+        "encashment_enabled": payload.encashment_enabled,
+        "encashment_rate_percent": round(payload.encashment_rate_percent, 2),
+    }
+    return {
+        "policy_name": payload.policy_name.strip(),
+        "leave_type": payload.leave_type.strip(),
+        "accrual_rule": json.dumps(accrual_rule, sort_keys=True),
+        "carry_forward_rule": json.dumps(carry_rule, sort_keys=True),
+        "negative_balance_allowed": "1" if payload.negative_balance_allowed else "0",
+        "approval_levels": payload.approval_levels.strip() or "Manager,HR",
+        "payroll_impact": payload.payroll_impact.strip() or "Paid",
+        "status": payload.status.strip() or "Active",
+    }
+
+def _parse_policy_json(value: str | None, fallback: dict[str, Any]):
+    if not value:
+        return fallback
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, dict) else fallback
+    except Exception:
+        return fallback
+
+def _active_leave_policies(leave_type: str | None = None):
+    rows = _items("leave_policies", 500)
+    policies = [
+        item for item in rows
+        if (item.get("data", {}).get("status") or item.get("status")) == "Active"
+    ]
+    if leave_type:
+        policies = [item for item in policies if item.get("data", {}).get("leave_type", "").lower() == leave_type.lower()]
+    return policies
+
+def _save_leave_policy(payload: LeavePolicyRequest, actor: str):
+    item = storage.create_record("leave_policies", _leave_policy_payload(payload, actor))
+    _write_audit(actor, "save_leave_policy", "leave_policies", item.get("id", ""), item.get("data", {}), "HR leave policy saved.")
+    return {"item": item, "dashboard": _leave_dashboard()}
+
+def _allocation_exists(employee_code: str, leave_type: str, period: str, status: str = "Active"):
+    for item in _items("leave_allocations", 1000):
+        data = item.get("data", {})
+        if (
+            data.get("employee_code", "").lower() == employee_code.lower()
+            and data.get("leave_type", "").lower() == leave_type.lower()
+            and data.get("period", "").lower() == period.lower()
+            and (data.get("status") or item.get("status")) == status
+        ):
+            return True
+    return False
+
+def _employees_for_leave_run(employee_code: str | None = None):
+    if employee_code:
+        return [employee_code.strip()]
+    rows = _items("employees", 1000)
+    return sorted({
+        row.get("data", {}).get("employee_code", "")
+        for row in rows
+        if row.get("data", {}).get("employee_code") and (row.get("data", {}).get("status") or row.get("status")) == "Active"
+    })
+
+def _run_leave_accrual(payload: LeaveAccrualRunRequest, actor: str):
+    run_type = payload.run_type.strip().title()
+    if run_type not in {"Accrual", "Carry Forward", "Expiry"}:
+        raise HTTPException(status_code=422, detail="run_type must be Accrual, Carry Forward, or Expiry.")
+    period = payload.period.strip()
+    target_period = (payload.target_period or period).strip()
+    employees = _employees_for_leave_run(payload.employee_code)
+    policies = _active_leave_policies(payload.leave_type)
+    created = []
+    skipped = []
+    expired = []
+    if run_type == "Expiry":
+        today = date.today()
+        for allocation in _items("leave_allocations", 1000):
+            data = allocation.get("data", {})
+            if payload.employee_code and data.get("employee_code", "").lower() != payload.employee_code.strip().lower():
+                continue
+            if payload.leave_type and data.get("leave_type", "").lower() != payload.leave_type.strip().lower():
+                continue
+            expiry = data.get("expiry_date", "")
+            if not expiry:
+                continue
+            try:
+                is_expired = _parse_iso_date(expiry, "expiry_date") < today
+            except HTTPException:
+                is_expired = False
+            if is_expired and (data.get("status") or allocation.get("status")) == "Active":
+                if payload.dry_run:
+                    expired.append(data)
+                else:
+                    expired.append(storage.update_record("leave_allocations", allocation.get("id", ""), {"status": "Expired"}).get("data", {}))
+        _write_audit(actor, "run_leave_expiry", "leave_allocations", period, {"expired": len(expired), "dry_run": payload.dry_run}, "Leave expiry job executed.")
+        return {"run_type": run_type, "created": created, "skipped": skipped, "expired": expired, "dashboard": _leave_dashboard()}
+    if not employees:
+        raise HTTPException(status_code=422, detail="No active employees found for leave policy run.")
+    if not policies:
+        raise HTTPException(status_code=422, detail="No active leave policies found for leave policy run.")
+    previous_balances = _leave_balance_rows()
+    for employee_code in employees:
+        for policy in policies:
+            data = policy.get("data", {})
+            leave_type = data.get("leave_type", "")
+            accrual_rule = _parse_policy_json(data.get("accrual_rule"), {"frequency": "Monthly", "days": 0, "max_balance": None})
+            carry_rule = _parse_policy_json(data.get("carry_forward_rule"), {"enabled": False, "max_days": 0})
+            if run_type == "Accrual":
+                days = _money(accrual_rule.get("days"), 0)
+                max_balance = _money(accrual_rule.get("max_balance"), 0)
+                expiry_date = f"{target_period[:4]}-12-31" if len(target_period) >= 4 else ""
+            else:
+                if not _bool_setting(carry_rule.get("enabled"), False):
+                    skipped.append({"employee_code": employee_code, "leave_type": leave_type, "reason": "carry_forward_disabled"})
+                    continue
+                previous = next(
+                    (
+                        row for row in previous_balances
+                        if str(row.get("employee_code", "")).lower() == employee_code.lower()
+                        and str(row.get("leave_type", "")).lower() == leave_type.lower()
+                        and str(row.get("period", "")).lower() == period.lower()
+                    ),
+                    None,
+                )
+                available = _money(previous.get("available_days") if previous else 0)
+                days = min(available, _money(carry_rule.get("max_days"), available))
+                max_balance = 0
+                expiry_date = f"{target_period[:4]}-12-31" if len(target_period) >= 4 else ""
+            if days <= 0:
+                skipped.append({"employee_code": employee_code, "leave_type": leave_type, "reason": "no_days"})
+                continue
+            if _allocation_exists(employee_code, leave_type, target_period):
+                skipped.append({"employee_code": employee_code, "leave_type": leave_type, "reason": "allocation_exists"})
+                continue
+            if max_balance > 0:
+                current_balance = sum(
+                    _money(row.get("available_days"))
+                    for row in previous_balances
+                    if str(row.get("employee_code", "")).lower() == employee_code.lower()
+                    and str(row.get("leave_type", "")).lower() == leave_type.lower()
+                )
+                days = max(min(days, max_balance - current_balance), 0)
+            allocation = {
+                "allocation_id": _new_ref("LAL"),
+                "employee_code": employee_code,
+                "leave_type": leave_type,
+                "period": target_period,
+                "allocated_days": f"{days:.2f}",
+                "used_days": "0.00",
+                "available_days": f"{days:.2f}",
+                "expiry_date": expiry_date,
+                "status": "Active",
+            }
+            if payload.dry_run:
+                created.append(allocation)
+            else:
+                created.append(storage.create_record("leave_allocations", allocation).get("data", {}))
+    _write_audit(actor, f"run_leave_{run_type.lower().replace(' ', '_')}", "leave_allocations", target_period, {"created": len(created), "skipped": len(skipped), "dry_run": payload.dry_run}, "Leave accrual/carry-forward policy run executed.")
+    return {"run_type": run_type, "created": created, "skipped": skipped, "expired": expired, "dashboard": _leave_dashboard()}
+
+def _create_leave_encashment(payload: LeaveEncashmentRequest, actor: str):
+    employee_code = payload.employee_code.strip()
+    leave_type = payload.leave_type.strip()
+    if not employee_code or not leave_type:
+        raise HTTPException(status_code=422, detail="employee_code and leave_type are required.")
+    if payload.days <= 0 or payload.amount_per_day <= 0:
+        raise HTTPException(status_code=422, detail="days and amount_per_day must be greater than zero.")
+    policy = next((_policy for _policy in _active_leave_policies(leave_type)), None)
+    if policy:
+        carry_rule = _parse_policy_json(policy.get("data", {}).get("carry_forward_rule"), {})
+        if not _bool_setting(carry_rule.get("encashment_enabled"), False):
+            raise HTTPException(status_code=409, detail="Leave encashment is disabled by active leave policy.")
+    balance = next(
+        (
+            row for row in _leave_balance_rows()
+            if str(row.get("employee_code", "")).lower() == employee_code.lower()
+            and str(row.get("leave_type", "")).lower() == leave_type.lower()
+            and str(row.get("period", "")).lower() == payload.period.lower()
+        ),
+        None,
+    )
+    available = _money(balance.get("available_days") if balance else 0)
+    if payload.days > available:
+        raise HTTPException(status_code=409, detail=f"Encashment exceeds available leave balance {available:.2f}.")
+    amount = round(payload.days * payload.amount_per_day, 2)
+    adjustment = storage.create_record("payroll_adjustments", {
+        "adjustment_id": _new_ref("PADJ"),
+        "employee_code": employee_code,
+        "payroll_month": payload.payroll_month.strip(),
+        "adjustment_type": "Leave Encashment",
+        "addition_or_deduction": "Addition",
+        "amount": f"{amount:.2f}",
+        "calculation_method": "Leave Encashment",
+        "quantity": f"{payload.days:.2f}",
+        "rate": f"{payload.amount_per_day:.2f}",
+        "reason": payload.reason.strip(),
+        "policy_reference": policy.get("data", {}).get("policy_name", "Leave encashment policy") if policy else "Leave encashment policy",
+        "supporting_attachment": "",
+        "requested_by": actor,
+        "approval_status": "Pending Approval",
+        "approved_by": "",
+        "rejected_by": "",
+        "approval_remarks": "",
+        "payroll_inclusion_status": "Pending Approval",
+        "limit_check": "leave_balance_verified",
+        "duplicate_key": _adjustment_duplicate_key(employee_code, payload.payroll_month.strip(), "Leave Encashment", amount, "Addition"),
+        "reversal_of": "",
+        "created_time": _now_iso(),
+        "updated_time": _now_iso(),
+        "status": "Pending Approval",
+    })
+    allocation = storage.create_record("leave_allocations", {
+        "allocation_id": _new_ref("LAL"),
+        "employee_code": employee_code,
+        "leave_type": leave_type,
+        "period": payload.period.strip(),
+        "allocated_days": "0.00",
+        "used_days": f"{payload.days:.2f}",
+        "available_days": "0.00",
+        "expiry_date": "",
+        "status": "Encashed",
+    })
+    _write_audit(actor, "create_leave_encashment", "payroll_adjustments", adjustment.get("data", {}).get("adjustment_id", adjustment.get("id", "")), {"adjustment": adjustment.get("data", {}), "allocation": allocation.get("data", {})}, payload.reason)
+    _notify_employee(employee_code, "leave_encashment_submitted", "Leave encashment submitted", f"{payload.days:.2f} {leave_type} day(s) submitted for payroll encashment.", employee_code)
+    return {"adjustment": adjustment, "allocation": allocation, "dashboard": _leave_dashboard()}
+
 def _leave_dashboard():
     applications = [_leave_application_summary(item) for item in _items("leave_applications", 1000)]
     holidays = [item.get("data", {}) for item in _items("holidays", 500)]
     calendars = [item.get("data", {}) for item in _items("holiday_calendars", 500)]
+    policies = _items("leave_policies", 500)
     balances = _leave_balance_rows()
     pending = [item for item in applications if item["approval_status"] in {"Open", "Pending", "Pending Approval", "Draft"}]
     approved = [item for item in applications if item["approval_status"] == "Approved"]
@@ -1323,10 +1604,14 @@ def _leave_dashboard():
             "holidays": len(holidays),
             "paid_holidays": len(paid_holidays),
             "calendars": len(calendars),
+            "policies": len(policies),
+            "active_policies": len([item for item in policies if (item.get("data", {}).get("status") or item.get("status")) == "Active"]),
+            "expired_allocations": len([item for item in _items("leave_allocations", 1000) if (item.get("data", {}).get("status") or item.get("status")) == "Expired"]),
         },
         "applications": applications[:100],
         "pending": pending[:50],
         "balances": balances[:100],
+        "policies": policies[:100],
         "holidays": holidays[:100],
         "calendars": calendars[:50],
     }
@@ -2225,7 +2510,7 @@ def _decide_salary_revision(payload: SalaryRevisionDecisionRequest, actor: str):
 PAYROLL_ADJUSTMENT_TYPES = {
     "Additional Salary", "Deduction", "Bonus", "Incentive", "Reimbursement", "Arrear", "Recovery",
     "Loan Deduction", "Advance Deduction", "Attendance Penalty", "Unpaid Leave Deduction",
-    "Holiday Adjustment", "Correction", "Tax Adjustment", "Other Approved Adjustment", "Reversal",
+    "Holiday Adjustment", "Leave Encashment", "Correction", "Tax Adjustment", "Other Approved Adjustment", "Reversal",
 }
 PAYROLL_LOCKED_STATUSES = {"Approved", "Locked", "Payment Processing", "Paid", "Partially Paid"}
 PAYROLL_PAYMENT_READY_STATUSES = {"Approved", "Locked", "Payment Processing", "Partially Paid"}
@@ -3768,6 +4053,21 @@ def v1_hr_employee_lifecycle(payload: HrLifecycleEventRequest, email: str = Depe
 def v1_hr_leave_dashboard(email: str = Depends(_verify)):
     _require_permission(email, "hr:leave")
     return _leave_dashboard()
+
+@app.post("/api/v1/hr/leave/policies")
+def v1_hr_leave_policy(payload: LeavePolicyRequest, email: str = Depends(_verify)):
+    _require_permission(email, "hr:leave")
+    return _save_leave_policy(payload, email)
+
+@app.post("/api/v1/hr/leave/accrual-run")
+def v1_hr_leave_accrual_run(payload: LeaveAccrualRunRequest, email: str = Depends(_verify)):
+    _require_permission(email, "hr:leave")
+    return _run_leave_accrual(payload, email)
+
+@app.post("/api/v1/hr/leave/encashment")
+def v1_hr_leave_encashment(payload: LeaveEncashmentRequest, email: str = Depends(_verify)):
+    _require_permission(email, "hr:leave")
+    return _create_leave_encashment(payload, email)
 
 @app.post("/api/v1/hr/leave/applications")
 def v1_hr_leave_application(payload: LeaveApplicationRequest, email: str = Depends(_verify)):
